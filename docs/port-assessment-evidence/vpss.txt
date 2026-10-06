@@ -1,0 +1,244 @@
+Phase-1 reader report: vpss (generated 2026-10-06; evidence as file:line in the named repository; see docs/sg2000-kernel-port-plan.md)
+
+scope: Deep-read of /home/user/sg2000_osdrv/interdrv/v2/vpss (module cv181x_vpss.ko, Makefile + chip/cv181x/chip.mk) and its two display consumers vo (6,964 LOC) and fb (869 LOC). vpss in-tree is 25,815 LOC (36 files); the default build excludes sclr_test.c (2,146 LOC, CONFIG_SCLR_TEST=0) and cmdq.c (186 LOC, CONFIG_RGN_EX=0) per chip.mk:1-5,14-17,31-34, so ~23.4k LOC are actually compiled. Files read: vpss_core.c (probe/ISR/callbacks), cvi_vip_img.c, cvi_vip_sc.c, scaler.c (7,345 LOC HW layer: SC_TOP, IMG_IN, SC core, ODMA, GOP, DISP, DSI, I80, BT, LVDS, CMDQ, tile), scaler.h, scaler_reg.h, reg_disp.h/reg_vgop.h/reg_sc_top.h/reg_sc_odma.h/reg_img_in.h, disp_timing.h, dsi_phy.c/.h, common/vpss.c (5,621 LOC group/channel SW model), vpss.h, vpss_ioctl.c, cvi_vip_vpss_proc.c, uapi vpss_uapi.h / cvi_vpss_ctx.h / cvi_defines.h, plus the consumer call sites in vo/common/vo_core.c, vo/chip/cv181x/vo.c, vo/chip/cv181x/vo_mipi_tx.c, fb/cvifb.c, rgn/chip/cv181x/rgn.c, base/base.c, base/chip/cv181x/vip_sys.c and vip_common.h. Cross-checked against /home/user/sg2000_linux_5.10 (bindings docs, clk-cv181x.c, dma-mapping.c) and /home/user/mainline_linux 7.3 (clk-cv1800.c, sophgo,cv1800.h, cv18xx-reset.h, dtsi, rga/sun8i-rotate/ge2d, DRM headers).
+kernel_interface: Userspace: one misc device "cvi-vpss" (vpss_core.c:1575-1579, MISC_DYNAMIC_MINOR) with fops open/release/unlocked_ioctl only (vpss_core.c:1561-1566); no mmap, no compat_ioctl (grep none). 49 ioctls defined with magic 'S' in include/chip/cv181x/uapi/linux/vpss_uapi.h:200ff (CREATE/DESTROY/START/STOP/RESET_GROUP, SET/GET_GRP_ATTR, GRP/CHN crop, SEND_FRAME, SEND_CHN_FRAME, GET/RELEASE_CHN_FRAME, CHN attr/rotation/LDC/align/yratio/scale-coef/show/hide/buf-wrap, ATTACH/DETACH_VB_POOL, TRIGGER_SNAP_FRAME, SET_MODE/SET_MODE_EX, SET_GRP_CSC_CFG, SET_BLD_CFG, GET_AMP_*, GET_SCENE, SUSPEND, RESUME); 47 cases handled in vpss/common/vpss_ioctl.c (grep 'case CVI_VPSS_' = 47), 3 copy_from/to_user sites, access_ok at vpss_ioctl.c:39. Frames are exchanged as physical addresses inside VIDEO_FRAME_INFO_S (vpss.c:4393-4407 vb_physAddr2Handle/vb_create_block(VB_EXTERNAL_POOLID)) — i.e. the uAPI is the CVITEK MPI 'VB' pool model, not dmabuf/V4L2. procfs: /proc/cvitek/vpss (cvi_vip_vpss_proc.c:14,551) using PDE_DATA (line 525) and struct proc_ops (529). Module params: vpss_log_lv, debug, single_vb, vip_clk_freq (vpss_core.c:193-208). Kernel-internal interface: 72 EXPORT_SYMBOL_GPL (59 in scaler.c, 13 in dsi_phy.c) consumed by vo/fb, and 23 VPSS_CB_* callback IDs (include/common/kapi/vpss_cb.h) served through base_reg_module_cb (vpss_core.c:1321-1330) for vi, vo, dwa, rgn, vcodec.
+hw_blocks:
+  - SC_TOP (reg_base+0x0, scaler_reg.h:5,28-56): global enables for sc_d/sc_v1-3/disp, disp_from_sc, img trig src (REG_SCL_TOP_CFG0/1, scaler.c:708-745 under raw spinlock __sc_top_lock), single INTR_MASK/STATUS register for ALL sub-blocks (0x30/0x34, union sclr_intr scaler.h:147-180: disp_frame_start/end, img_in_d/v, scl0-3 frame_end, i80, tgen_lite, cmdq), VO output type mux + 7 VO data-pin mux regs (0x70-0xAC, scaler.c:835-912), BT encoder/sync code (0x60-0x68), LVDSTX (0x50), privacy-mask engine (0x300), OSD encoder OENC (0xC00), blend ctrl (0x200)
+  - IMG_IN x2 (IMG_V for encoder path, IMG_D for display path; reg_base+0x2000+0x1000*x, scaler_reg.h:20; cvi_vip_img.c:19,281): read DMA with sources ISP(online)/DWA/MEM (enum sclr_input scaler.h:100-105), formats enum sclr_format scaler.h:181-199 (YUV420/422 planar, NV12/21, YUYV family, RGB/BGR packed/planar, Y-only, BF16), CSC, crop, trigger source SW/DISP/ISP (scaler.h:284-289)
+  - SC core x4 = SC_D, SC_V1, SC_V2, SC_V3 (reg_base+0x4000+0x1000*x, scaler_reg.h:21; SCL_MAX_INST 4 scaler.h:10): crop (scaler.c:1127), bicubic/bilinear/2-tap scaling with coefficient tables (926,1330,1282), mirror (1184), CSC/quant (2078,2104), border (1812), circle/cover (1777,2918), per-SC GOP (0x600/0x800 offsets) with 2 layers x 8 overlay windows (scaler.h:22-28, SCL_MAX_GOP_OW_INST 8, SCL_MAX_GOP_INST 2), max 2880x2880 (scaler.h:18-19), tile mode split for larger (5636/5772). IMG_V feeds all three SC_V, IMG_D feeds SC_D (cvi_vip_img.c:281-282)
+  - ODMA x4 (write DMA per SC, reg_sc_odma.h; scaler.c:1864-1990): formats, flip, 3-plane addresses (cvi_vip_sc.c:135), slice-buffer handshake to video encoder (sclr_odma_set_sb 1960)
+  - DISP (reg_base+0x8000, scaler_reg.h:22, reg_disp.h 709 defines): display controller/timing generator (sclr_disp_set_timing 3179-3209: htotal/vtotal/hsync/vsync/hfde/vfde/hmde/vmde), framebuffer read DMA from DRAM or online from SC_D (disp_from_sc, 3088-3141, 4607), in/out CSC, pattern generator, bg color, gamma LUT 65 nodes (3528-3576), FIFO threshold, DISP GOP overlay (REG_DISP_GOP_OFFSET 0x800, sclr_gop_* with inst SCL_GOP_DISP), MCU/i80 interface (REG_SCL_DISP_MCU_*, 4190-4296)
+  - DSI MAC/controller (reg_base+0xA000, scaler_reg.h:24; scaler.c:3714-4189): HS/ESC mode, long/short packet, DCS write/read buffer, lane count & format cfg (sclr_dsi_config 4108)
+  - DSI/LVDS D-PHY (second reg region 0x0A0D1000, scaler_reg.h:6; dsi_phy.c 440 LOC): lane mux/pn-swap, lane enable, TX PLL calculation (_cal_pll_reg 233-266), LVDS mode, HS settle, manual LP escape bit-bang (dpyh_mipi_tx_manual_packet)
+  - BT.601/656/1120 output encoder (sclr_bt_set 3588, sclr_disp_bt_en 875, REG_SCL_TOP_BT_*)
+  - LVDS TX (sclr_lvdstx_set 3577, dphy_lvds_set_pll dsi_phy.c:268)
+  - CMDQ (reg_base+0xB000; cmdq.c, sclr_engine_cmdq 5018) — only built with CONFIG_RGN_EX=1 / used by sclr_test; not in default build
+  - External SoC registers poked by raw ioremap from this module: 0x03002840 PLL_G2_SSC_SYN_CTRL (scaler.c:3615-3623), 0x0A0C8070 VIP_SYS AXI realtime fab priority (4627-4639), 0x08004544 DDR controller timeout patch (4643-4664); VIP_SYS_VIP_CLK_CTRL0 via base module (dsi_phy.c:259-265,285,336-340)
+dt_expectations:
+  compatibles:
+    - cvitek,vpss (vpss_core.c:1764; note vendor binding doc only documents 'cvitek,vip' and 'cvitek,fb': sg2000_linux_5.10/Documentation/devicetree/bindings/soc/cvitek/vip.txt, fb.txt)
+    - cvitek,vo (vo/common/vo_core.c:353) — consumer, also maps reg regions (vo_core.c:172-173)
+    - cvitek,mipi_tx (vo/chip/cv181x/vo_mipi_tx.c:874) — consumer
+    - cvitek,fb (fb; vendor fb.txt) — consumer
+    - cvitek,base (base/base.c:917) — provides VIP_SYS register base used by dsi_phy.c
+  reg_names_or_count: 2 regions by index, no reg-names (vpss_core.c:1421-1436): [0] SC_TOP block = 0x0A080000 (scaler_reg.h:5) covering TOP+IMG(0x2000..)+SC cores(0x4000..)+DISP(0x8000)+BT(0x9000)+DSI(0xA000)+CMDQ(0xB000) i.e. >=0xC000 bytes (scaler_reg.h:19-25); [1] DSI D-PHY wrap = 0x0A0D1000 (scaler_reg.h:6). Note devm_ioremap uses res->end-res->start (off-by-one, vpss_core.c:1428-1432).
+  irq_names:
+    - sc (vpss_core.c:1407,1446; requested IRQF_SHARED as 'CVI_VIP_SCL' at 1664) — one IRQ shared by scalers, img_in, display vblank, i80 and cmdq; vo declares the same name 'sc' (vo_core.c:9,185) but its request_irq is #if 0 (vo_core.c:211-220) and it receives display IRQs via callback VO_CB_IRQ_HANDLER from vpss scl_isr (vpss_core.c:1357-1358, vo.c:2139-2146)
+  clock_names:
+    - clk_sys_0, clk_sys_1, clk_sys_2, clk_sc_top (vpss_core.c:1409-1410, 1457-1468; all optional, NULL on failure)
+    - clk_img_d, clk_img_v (cvi_vip_img.c:19,273)
+    - clk_sc_d, clk_sc_v1, clk_sc_v2, clk_sc_v3 (cvi_vip_sc.c:21)
+    - consumers: clk_disp, clk_dsi (vo_mipi_tx.c:57-58,617,626); vo_core.c:127-137 clk_disp/clk_bt/clk_dsi names (literal strings not located — unverified)
+    - Mainline mapping (include/dt-bindings/clock/sophgo,cv1800.h; drivers/clk/sophgo/clk-cv1800.c:639-714): clk_sc_top->CLK_SC_TOP_VIP(114), clk_img_d/v->CLK_IMG_D_VIP(112)/CLK_IMG_V_VIP(113), clk_sc_d/v1/v2/v3->CLK_SC_D_VIP(115)/CLK_SC_V1..V3_VIP(116-118), clk_sys_0/1/2->CLK_SRC_VIP_SYS_0/1/2(100-102), clk_disp->CLK_DISP_VIP(121)+CLK_DISP_SRC_VIP(161), clk_dsi->CLK_DSI_MAC_VIP(122)+CLK_DSI_ESC(98), clk_bt->CLK_BT_VIP(120), DISPPLL->CLK_DISPPLL(5), bus->CLK_AXI_VIP(99)
+  reset_handling: No reset-controller API used in vpss/base/vo (grep reset_control/devm_reset: none). VIP-internal soft resets are done through the VIP_SYS register VIP_SYS_VIP_RESETS via base module (vip_sys.c:48-80, union vip_sys_reset bits isp_top/img_d/img_v/sc_top/sc_d/sc_v1-3/disp/bt/dsi_mac in vip_common.h:26-40); vpss only uses sclr_sc_reset/sclr_img_reset register bits inside its own block (scaler.c:1082,1579). Mainline cv18xx-reset.h has only RST_VIPSYS(6) and RST_VIP_CAM0(99); no per-block VIP resets exist in mainline — a VIP_SYS syscon/reset provider would need to be added.
+  reserved_memory_or_ion: vpss itself: memory-region lookup code present but compiled out (#if 0, vpss_core.c:1368-1399). Buffers come from the CVITEK VB pool via base (vb_get_block_with_id vpss.c:736,905; vb_qbuf/dqbuf) and from vendor ION through sys module sys_ion_alloc (vpss.c:4994 wrap buffer, 5343 'VpssGrp%dWrapBuf'), 4 sys_ion_free sites. fb requires 'memory-region' (cvifb.c:619-629) and flushes it with the non-exported arch_sync_dma_for_device (cvifb.c:419,552).
+  gpios_and_misc_props:
+    - clock-freq-vip-sys1 u32, default 300000000 (vpss_core.c:1473-1474)
+    - no GPIO, no pinctrl, no panel/port graph in vpss; panel reset/backlight and DSI lane mapping come from userspace via mipi_tx ioctl CVI_VIP_MIPI_TX_SET_DEV_CFG (vo_mipi_tx.c:351-372,163-213)
+    - vo_mipi_tx.c also raw-ioremaps 0x03000220 and 0x03005144 ('vbat', lines 752-779) — meaning unverified
+depends_on_modules:
+  - base (KBUILD_EXTRA_SYMBOLS vpss/Makefile:23): base_* 49 call sites (base_get_jobs_by_chn 8, base_exe_module_cb 8, base_mod_jobs_* , base_reg/rm_module_cb, base_fill_videoframe2buffer), vb_* 47 call sites (vb_release_block 14, vb_qbuf/dqbuf, vb_get_block_with_id, vb_create_block, vb_physAddr2Handle...), vip_sys_reg_read/write_mask 5 (dsi_phy.c) exported from base/chip/cv181x/vip_sys.c:98-104
+  - sys (vpss/Makefile:24): sys_ion_alloc 2 + sys_ion_free 4, sys_get_bindbysrc 3 (-> vendor kernel ION)
+  - runtime callbacks (not link-time) to vi (VI_CB_MOTION_CALC vpss.c:2537, VI_CB_RESET_ISP 2772), vo (VO_CB_IRQ_HANDLER vpss_core.c:1358), dwa (DWA_CB_*, 3 sites), vcodec (VCODEC_CB_SEND_FRM/SKIP_FRM vpss.c:2457,2683)
+  - consumers linking against vpss Module.symvers: vo (vo/Makefile:26; 63 distinct sclr_/dphy_/vip_ symbols), fb (fb/Makefile:19; sclr_gop_get_cfg/set_cfg/ow_set_cfg, sclr_disp_mux_get, sclr_disp_get_hw_timing, _ddr_ctrl_patch, vip_axi_realtime_fab_priority), rgn (rgn/Makefile:26; only #if 0 use at rgn.c:2427)
+  - vendor kernel: drivers/staging/android/ion (via sys), arch/riscv/mm/dma-mapping.c export of arch_sync_dma_for_device (used only in RGN_EX path scaler.c:5428 and in fb), drivers/clk/cvitek (clock names above), include paths -I$(srctree)/drivers/staging/android and drivers/tee (vpss/Makefile:19-20)
+vendor_kernel_only_deps:
+  -
+    symbol_or_header: sys_ion_alloc / sys_ion_free (sys module -> drivers/staging/android/ion + cvitek heap)
+    evidence: vpss/common/vpss.c:4994, 5343 (alloc), 4 free sites (grep); ION absent in mainline (ls drivers/staging/android: none)
+    replacement_in_mainline: dma_alloc_coherent/CMA or dma-heaps (include/linux/dma-heap.h absent from grep of include/linux in this tree — unverified); for V4L2 use vb2-dma-contig
+    call_sites: 6
+  -
+    symbol_or_header: arch_sync_dma_for_device (EXPORT_SYMBOL_GPL only in vendor arch/riscv/mm/dma-mapping.c:45)
+    evidence: scaler.c:5427-5431 (RGN_EX-only path), fb/cvifb.c:419,552; mainline arch/riscv/mm/dma-noncoherent.c:69 defines it without EXPORT (grep EXPORT_SYMBOL.*arch_sync_dma: none)
+    replacement_in_mainline: dma_map_single/dma_sync_single_for_device on DMA-API-mapped buffers; CMA framebuffer via drm_gem_dma
+    call_sites: 3
+  -
+    symbol_or_header: vip_sys_reg_read / vip_sys_reg_write_mask (VIP_SYS block 0x0A0C8000, base module) + raw ioremap(0x0A0C8070)
+    evidence: dsi_phy.c:259-265,285,336-340 (VIP_SYS_VIP_CLK_CTRL0 bit 0x10 selects DSI/BT clock divider), scaler.c:4627-4639; base/base.c:865-874 maps it from 'cvitek,base' reg[0]; mainline dtsi has no VIP_SYS node (grep 0a0c8000 in arch/riscv/boot/dts/sophgo: none)
+    replacement_in_mainline: new syscon/regmap node for VIP_SYS (or extend clk-cv1800 with a VIP clock provider); AXI QoS write via syscon
+    call_sites: 6
+  -
+    symbol_or_header: raw ioremap(0x03002840) PLL_G2_SSC_SYN_CTRL — sets bits 1 and 3 when any VO interface is enabled
+    evidence: scaler.c:3615-3623; vendor clk-cv181x.c:38 REG_PLL_G2_SSC_SYN_CTRL 0x840; mainline clk-cv1800.c:124-126 models bit 3 as clk_disppll_synthesizer enable
+    replacement_in_mainline: clk_prepare_enable(CLK_DISPPLL) via clock framework (bit 1 semantics unverified in mainline table)
+    call_sites: 1
+  -
+    symbol_or_header: raw ioremap(0x08004544) DDR controller 'OSD soft timeout' patch
+    evidence: scaler.c:4643-4664 _ddr_ctrl_patch, called from fb/cvifb.c:91 on fb enable
+    replacement_in_mainline: none; board-level quirk — drop or syscon
+    call_sites: 1
+  -
+    symbol_or_header: __clk_is_enabled (clk-provider internal)
+    evidence: vpss_core.c:941 and 4 more; exported in both kernels (vendor clk.c:534, mainline clk.c:669) — not strictly vendor-only but not a consumer API
+    replacement_in_mainline: track enable state locally / use runtime PM
+    call_sites: 5
+  -
+    symbol_or_header: Vendor uAPI/kapi headers leaking into HW layer: <linux/cvi_comm_vo.h>, <linux/vo_disp.h>, <linux/cvi_vip.h>, base_ctx.h, base_cb.h, dwa_cb.h, vo_cb.h, vip_common.h, reg_vip_sys.h
+    evidence: scaler.c:26-27 includes; struct cvi_i80_instr (include/chip/cv181x/uapi/linux/vo_disp.h:197) used by hw_mcu_cmd_send scaler.c:4190; vpss.h:4-15 includes
+    replacement_in_mainline: none — must be removed/redefined for any in-tree driver
+    call_sites: 11
+  -
+    symbol_or_header: VB pool / base job framework (vb_*, base_mod_jobs_*)
+    evidence: 47 vb_* and 49 base_* call sites in vpss.c/vpss_core.c (grep)
+    replacement_in_mainline: videobuf2 queues (V4L2) or drm_gem for display
+    call_sites: 96
+userspace_contract: Userspace is the CVITEK MPI middleware (libsys/libvpss/libvo: closed-SDK, not in repo — unverified beyond headers): it allocates VB pools via the sys/base devices, passes physical addresses in VIDEO_FRAME_INFO_S through the 49 'S'-magic ioctls (vpss_uapi.h:200ff), and configures the ISP->VPSS binding via VPSS_MODE/VI_VPSS_MODE (vpss.c:3322-3340, 5152-5185). Display: panel bring-up runs entirely in userspace — lane mapping, pixel clock, timing and DCS init sequences are pushed through /dev/cvi-mipi-tx ioctls (10 ioctls in include/chip/cv181x/uapi/linux/vo_mipi_tx.h: SET_DEV_CFG, SET_CMD, GET_CMD, ENABLE, SET_HS_SETTLE...; vo_mipi_tx.c:351-541 -> dphy_dsi_set_lane/set_pll, sclr_dsi_config, sclr_dsi_dcs_write_buffer at 163-273); VO timing/overlays via /dev/cvi-vo char device ioctls (vo.c:1362-1562, VO_IOCTL_SET_DV_TIMINGS, I80_CMD, SET_RGN...). The kernel keeps only 3 hard-coded timing tables (disp_timing.h: 800x600 TTL, 720x1280 hx8394, 1080p). No 3A involved in vpss; scaling coefficient tables are in-kernel (scaler.c:926-1022). Binary compatibility: any move to DRM/V4L2 breaks the MPI libraries completely (physical-address frame passing, VB pools, callback-chained module model); a shim is impractical because the uAPI structs embed VB_POOL handles and MMF_CHN_S bindings (cvi_vpss_ctx.h:31-73). fbdev consumers (/dev/fb0 via cvifb) would be preserved by DRM fbdev emulation.
+api_breakages_5_10_to_7_3:
+  -
+    api: struct platform_driver.remove
+    what_changed: returns void in mainline (include/linux/platform_device.h:280); vpss returns int (vpss_core.c:1788 .remove = cvi_vpss_remove)
+    fix: change signature to void; same in vo_core.c, vo_mipi_tx.c, cvifb.c, base.c
+    severity: trivial
+    call_sites: 1
+  -
+    api: PDE_DATA()
+    what_changed: removed; replaced by pde_data() (mainline proc_fs.h:124)
+    fix: s/PDE_DATA/pde_data/ in cvi_vip_vpss_proc.c:525
+    severity: trivial
+    call_sites: 1
+  -
+    api: devm_ioremap_nocache
+    what_changed: removed from mainline (grep include/linux: none)
+    fix: already guarded by LINUX_VERSION_CODE >= 5.10 at vpss_core.c:1427-1432; delete the #else branch
+    severity: trivial
+    call_sites: 1
+  -
+    api: arch_sync_dma_for_device export
+    what_changed: not EXPORT_SYMBOL in mainline riscv (dma-noncoherent.c:69)
+    fix: scaler.c:5428 is RGN_EX-only (not built); fb/cvifb.c:419,552 must switch to dma_sync_single_for_device on a dma_map'ed region or use coherent/WC mapping
+    severity: moderate
+    call_sites: 3
+  -
+    api: Android ION (sys_ion_alloc/free via sys module) and -I drivers/staging/android include path
+    what_changed: drivers/staging/android/ion deleted upstream (5.11)
+    fix: replace the sys module allocator with CMA dma_alloc_* / dma-heaps; vpss only needs 6 call-site changes but the VB pool model in base depends on the same allocator
+    severity: hard
+    call_sites: 6
+  -
+    api: tasklet_init / tasklet_hi_schedule / tasklet_disable
+    what_changed: still present in 7.3 (include/linux/interrupt.h) but deprecated
+    fix: optional: convert img job tasklet (cvi_vip_img.c:300, vpss_core.c:957) to threaded IRQ or workqueue
+    severity: moderate
+    call_sites: 6
+  -
+    api: access_ok(VERIFY_READ, ...) 3-arg form
+    what_changed: 2-arg form since 5.0; vpss already version-guarded (vpss_ioctl.c:39-44)
+    fix: drop #else branch
+    severity: trivial
+    call_sites: 1
+  -
+    api: ccflags -Werror -Wall -Wextra with new compiler/kernel warnings; LINUX_VERSION_CODE guards (5 sites)
+    what_changed: newer GCC/clang + kernel headers will surface new warnings (e.g. -Wunused-but-set, flexible array, strict prototypes) under -Werror (vpss/Makefile:21)
+    fix: clean up or drop -Werror while porting
+    severity: moderate
+    call_sites: 5
+  -
+    api: misc_register / proc_create_data / struct proc_ops / devm_clk_get / platform_get_irq_byname / of_reserved_mem_lookup
+    what_changed: unchanged — present in mainline (verified by grep of include/linux)
+    fix: none
+    severity: trivial
+    call_sites: 0
+mainline_framework_fit: Display engine (DISP + DISP GOP + VO mux/BT/LVDS + DSI MAC + D-PHY) -> DRM/KMS: the register code already exists as a self-contained layer in scaler.c lines 2249-3713 (disp/gop/bt/lvds, ~1,460 LOC) + 3714-4296 (dsi/i80, ~580 LOC) + dsi_phy.c (440 LOC) + reg_disp.h/reg_vgop.h; struct sclr_disp_timing (scaler.h:824-842) converts 1:1 to drm_display_mode; GOP = 2 layers x 8 ARGB/LUT windows (scaler.h:22-28,267-276) -> DRM overlay planes without scaling; DSI DCS write/read (scaler.c:4006-4107) -> mipi_dsi_host_ops.transfer with drm_mipi_dsi.h; hx8394/ili9881c panels already exist in mainline (drivers/gpu/drm/panel/panel-himax-hx8394.c, panel-ilitek-ili9881c.c); i80 -> drm_mipi_dbi.h; BT.656/1120 and RGB -> DPI encoder + drm_bridge; fb -> drm_fbdev_dma (include/drm/drm_fbdev_dma.h present). Reference sizes: sun6i_mipi_dsi.c 1,265 LOC, sun4i_tcon.c 1,585, ingenic-drm-drv.c 1,683 — comparable scope. Fit is GOOD for a DRAM-fed CRTC (default: dev->disp_online=false vpss_core.c:1643; g_disp_cfg.disp_from_sc=false scaler.c:4379), with three precise coupling problems: (1) SC_TOP register block is shared — disp_enable/disp_from_sc live in REG_SCL_TOP_CFG1 next to the scaler enables (scaler.c:716-728), VO mux/BT/LVDSTX registers are in SC_TOP (scaler_reg.h:41-53), so a DRM driver and a scaler driver need a common regmap/syscon parent (MFD-style 'vip-sc-top' with children, regmap.h available); (2) a single IRQ 'sc' and a single INTR_STATUS register carry display vblank and scaler frame-end bits (scaler.h:147-180; scl_isr vpss_core.c:1332-1363 clears all bits then dispatches to vo by callback) — needs an irqchip/regmap-irq demux or one owner handling both; (3) clock/PLL/VIP_SYS side effects currently done by raw pokes (0x03002840 DISPPLL enable, VIP_SYS_VIP_CLK_CTRL0 bit 0x10 in dsi_phy.c:259-265) must become clk framework calls (CLK_DISPPLL, CLK_DISP_VIP, CLK_DSI_MAC_VIP, CLK_DSI_ESC are modeled in clk-cv1800.c:639-714) plus a new VIP_SYS syscon. The online disp_from_sc path (SC_D feeds DISP without DRAM, scaler.c:4607-4622) would be dropped or modeled later as a scaling primary plane. Scaler (IMG_IN + SC + ODMA) -> V4L2: in offline MEM->MEM mode each SC instance is a classic 1-in/1-out m2m engine (crop, scale, mirror/flip, CSC, format conversion) and maps directly to the v4l2_m2m + vb2_dma_contig pattern of rockchip rga (rga.c:88-123, 832; 3,153 LOC), sun8i-rotate (1,347 LOC), meson-ge2d (1,055 LOC). Fit is PARTIAL: (a) IMG_V is one read DMA shared by SC_V1..V3 (cvi_vip_img.c:281-282; sc_bounding CVI_VIP_IMG_2_SC_V) so the HW is 1-in/3-out — V4L2 m2m is strictly 1:1, so either run one job per output (re-reading the source, losing the bandwidth advantage) or expose a media-controller device with one output and multiple capture nodes (non-m2m); (b) per-SC GOP overlay, privacy mask, border, cover and slice-buffer-to-encoder handshake (scaler.c:2302,2944,1812,2918,1960) have no V4L2 m2m equivalent and would be dropped or custom controls; (c) the online ISP->VPSS mode (SCL_INPUT_ISP cvi_vip_img.c:56-59, VPSS_CB_VI_ONLINE_TRIGGER vpss_core.c:1093-1104 triggered from vi.c:2962) makes the scalers part of the capture pipeline, which belongs in a V4L2 subdev/media-controller ISP driver (rkisp1 resizer+capture model), not in an m2m driver — so the camera use-case depends on a VI/ISP V4L2 driver that does not exist yet.
+port_options:
+  -
+    name: A. Lift-and-shift out-of-tree (keep CVITEK uAPI)
+    description: Compile vpss+vo+fb (with base+sys) against 7.3 as out-of-tree GPL modules: fix remove() signature, PDE_DATA, drop staging include paths, replace sys ION allocator with CMA/dma_alloc_coherent, replace fb arch_sync_dma with DMA-API, keep raw ioremap pokes or convert DISPPLL poke to clk_prepare_enable(CLK_DISPPLL); write a DT node for cvitek,vpss with the 10 clock names mapped to sophgo,cv1800.h IDs and a VIP_SYS region for base.
+    effort_engineer_weeks: 3-6 for vpss+vo+fb (assumes base/sys ION replacement is costed separately, no behavioral changes, hardware available, Milk-V Duo S board, 1 experienced kernel developer, -Werror relaxed)
+    risks:
+      - Cache coherency on dma-noncoherent C906: vendor code relies on vendor-exported arch_sync_dma; mis-handled flushes cause silent corruption
+      - Not upstreamable; 72 exported symbols and MPI middleware remain the contract
+      - VIP_SYS clock-divider bit (dsi_phy.c:259-265) and DDR patch stay as raw pokes outside the clock framework
+      - Unknown vendor middleware (closed SDK) must still match the uAPI
+    assumptions: Vendor userspace libraries available and unchanged; vendor base/sys/vi modules ported in parallel
+  -
+    name: B. New DRM/KMS driver for DISP+GOP+DSI (display only)
+    description: Extract register knowledge from scaler.c 2249-4296 + dsi_phy.c + reg_disp.h/reg_vgop.h into drivers/gpu/drm/sophgo/: CRTC on DISP timing generator with DRAM-fed primary plane, up to 8 GOP overlay planes, DSI host (drm_mipi_dsi) + D-PHY, DPI/BT656 encoder via drm_bridge, drm_fbdev_dma for /dev/fb0. SC_TOP shared via syscon regmap; IRQ via shared 'sc' line with a tiny demux or sole ownership while no scaler driver exists; clocks via CLK_DISP_VIP/CLK_DSI_MAC_VIP/CLK_DSI_ESC/CLK_DISPPLL; new VIP_SYS syscon node for CLK_CTRL0/RESETS.
+    effort_engineer_weeks: 8-16 for DSI + RGB/DPI outputs to a working modeset with an upstream panel driver (hx8394); +3-6 for BT.656/1120, LVDS, i80/DBI; +2-4 for upstream review iterations
+    risks:
+      - Register semantics are only known from vendor code with opaque numbered registers (reg_disp.h: DISP_REG_xx) — undocumented bits (FIFO_THR 0x10201020, SHD bit9) may be needed for stability
+      - DISPPLL/VIP_SYS divider programming (bt_div bit 0x10, _cal_pll_reg) must be re-derived as a clk/phy driver
+      - Shared INTR_STATUS register and SC_TOP CFG1 with any future scaler/ISP driver — needs an agreed MFD/syscon split up-front
+      - DT bindings review (new sophgo,cv1800-disp / dsi / dphy bindings) adds calendar time
+    assumptions: Panel and board schematics known; a DT port graph replaces the mipi_tx ioctl configuration; no requirement to keep the CVITEK VO/MPI uAPI
+  -
+    name: C. V4L2 mem2mem scaler driver (offline mode only)
+    description: One v4l2_m2m device per SC instance (or a single device with 4 contexts scheduled sequentially) modeled on rockchip rga / sun8i-rotate: IMG_IN read DMA + SC crop/scale/mirror/CSC + ODMA write; formats from enum sclr_format; drops GOP/privacy/border/slice-buffer features; shares SC_TOP via the same syscon as option B.
+    effort_engineer_weeks: 4-8 for a single-output m2m scaler with upstream-quality bindings (assumes option B's syscon/IRQ split exists; compliance via v4l2-compliance; no online-ISP support)
+    risks:
+      - IMG_V shared by three SC_V — m2m 1:1 model forces serialization and re-reading of the source
+      - Scaling coefficient tables and 2-tap/bicubic selection logic (scaler.c:926-1365) must be re-validated against output quality
+      - Does not cover the camera path (online ISP mode), so limited standalone value
+    assumptions: Camera pipeline is a separate project; GOP/OSD done in userspace or via DRM planes
+  -
+    name: D. Full V4L2 media-controller camera pipeline (VI/ISP + VPSS as subdevs)
+    description: Only path that reproduces the vendor online ISP->VPSS->multi-resolution output topology; VPSS SC_V1..V3 become resizer subdevs with capture video nodes behind a VI/ISP driver that does not yet exist in mainline (context: nothing upstream for VI/ISP/CIF).
+    effort_engineer_weeks: 6-12 for the VPSS subdev/capture part alone, conditional on a VI/ISP driver; total camera stack 25-50+ (unverified — depends on the VI/ISP analysis, not part of this read)
+    risks:
+      - Blocked on VI/ISP/CSI-RX driver and 3A userspace (libcamera) — none exist upstream
+      - Online trigger protocol between ISP and SC (VPSS_CB_VI_ONLINE_TRIGGER, isp_triggered tasklets) is intricate and undocumented
+    assumptions: libcamera-based userspace; multi-year horizon
+key_findings:
+  -
+    finding: The display controller, DISP overlay (GOP), VO output mux, BT/LVDS encoders, DSI MAC and D-PHY code all live inside the vpss module (scaler.c + dsi_phy.c) and are exported with 72 EXPORT_SYMBOL_GPL for vo/fb; vo issues no display register writes of its own except two 'vbat' pokes.
+    evidence: grep EXPORT_SYMBOL: scaler.c 59, dsi_phy.c 13; vo direct reg access only vo_mipi_tx.c:752-779 (ioremap 0x03000220/0x03005144); vo consumes 63 distinct sclr_/dphy_/vip_ symbols, fb 7 (grep counts)
+    confidence: verified
+  -
+    finding: Display vblank interrupts are delivered through the scaler's single shared IRQ 'sc' and a single INTR_STATUS register; vpss clears all bits and forwards to vo via a callback — vo's own request_irq is compiled out.
+    evidence: union sclr_intr scaler.h:147-180; scl_isr vpss_core.c:1332-1363 (sclr_intr_clr then _vpss_call_cb(E_MODULE_VO, VO_CB_IRQ_HANDLER)); vo_core.c:211-220 '#if 0 implement by vpss isr'; devm_request_irq IRQF_SHARED vpss_core.c:1664
+    confidence: verified
+  -
+    finding: The SC_TOP register block couples display and scalers: disp_enable and disp_from_sc share REG_SCL_TOP_CFG1 with sc_d/sc_v1-3 enables under one raw spinlock, and the VO pin mux/BT/LVDS registers are at SC_TOP offsets 0x50-0xAC.
+    evidence: scaler.c:708-745 sclr_top_set_cfg; scaler_reg.h:41-53; scaler.c:835-912 VO mux
+    confidence: verified
+  -
+    finding: vpss performs raw ioremap writes to SoC-level registers outside its DT regions: PLL_G2_SSC_SYN_CTRL 0x03002840 (DISPPLL enable, modeled in mainline clk-cv1800.c as bit 3), VIP_SYS AXI QoS 0x0A0C8070, DDR controller 0x08004544; plus VIP_SYS CLK_CTRL0 via base.
+    evidence: scaler.c:3615-3623, 4627-4639, 4643-4664; dsi_phy.c:259-265,336-340; vendor clk-cv181x.c:38; mainline clk-cv1800.c:124-126
+    confidence: verified
+  -
+    finding: All VPSS/VO clocks already exist in mainline clk-cv1800 (SC_TOP/SC_D/SC_V1-3/IMG_D/IMG_V/DISP/DSI_MAC/DSI_ESC/BT/DISPPLL/SRC_VIP_SYS_x), but there is no VIP_SYS syscon, no per-block VIP reset, and no DISP/DSI/VPSS DT node in mainline.
+    evidence: include/dt-bindings/clock/sophgo,cv1800.h:14,98-133,161; clk-cv1800.c:639-714; cv18xx-reset.h only RST_VIPSYS/RST_VIP_CAM0; grep of arch/riscv/boot/dts/sophgo for vpss/disp/dsi/0a080000: none
+    confidence: verified
+  -
+    finding: DT contract of cvitek,vpss: 2 reg regions (SC_TOP 0x0A080000, DPHY 0x0A0D1000), interrupt-names 'sc', 10 optional clock names (clk_sys_0/1/2, clk_sc_top, clk_img_d/v, clk_sc_d/v1/v2/v3), property clock-freq-vip-sys1; memory-region code is #if 0.
+    evidence: vpss_core.c:1402-1476, cvi_vip_img.c:19, cvi_vip_sc.c:21, scaler_reg.h:5-6, vpss_core.c:1368-1399
+    confidence: verified
+  -
+    finding: Software model: up to 16 groups x 3-4 physical channels mapped onto 2 'devices' (IMG_D->SC_D, IMG_V->SC_V1..V3), with a per-device kthread scheduler, VB-pool buffers and 5 online slots; group/channel ctx struct cvi_vpss_ctx is shared with userspace headers.
+    evidence: cvi_defines.h:336-357 (VPSS_IP_NUM 2, VPSS_MAX_GRP_NUM 16, VPSS_MAX_PHY_CHN_NUM 4, VPSS_ONLINE_NUM 5); vpss.c:5112 kthread_run(vpss_event_handler); cvi_vpss_ctx.h:55-73; vpss.c:736,905 vb_get_block_with_id
+    confidence: verified
+  -
+    finding: Online (ISP->VPSS without DRAM) and offline (MEM) modes are selected per group; in online mode VI triggers VPSS through VPSS_CB_VI_ONLINE_TRIGGER and the img tasklet runs on isp_triggered; the display can also be fed online from SC_D (disp_from_sc) but defaults to DRAM.
+    evidence: vpss.c:3322-3340, 5152-5185; vpss_core.c:1093-1104, 686-690, 956-958; vi.c:2962,3000; scaler.c:4607-4622; vpss_core.c:1643 disp_online=false
+    confidence: verified
+  -
+    finding: Panel initialization (lane map, PLL, DCS sequences, HS settle) is driven from userspace through the /dev/cvi-mipi-tx ioctls; the kernel has only 3 hard-coded timings. A DRM port moves this into DT + panel drivers; hx8394 and ili9881c panel drivers already exist upstream.
+    evidence: vo_mipi_tx.c:163-273, 351-541; vo_mipi_tx.h 10 ioctls; disp_timing.h; mainline drivers/gpu/drm/panel/panel-himax-hx8394.c, panel-ilitek-ili9881c.c
+    confidence: verified
+  -
+    finding: Vendor-kernel-only dependencies inside vpss are few and localized: ION via sys (6 sites), arch_sync_dma export (1 site, not built by default; 2 in fb), VIP_SYS accessors (5), raw SoC pokes (4); 5.10->7.3 API breaks are trivial (remove() void, PDE_DATA, guarded nocache/access_ok). The heavy coupling is to the base/sys VB & callback framework (96 call sites), not to kernel APIs.
+    evidence: grep counts over built files: vb_* 47, base_* 49, sys_ion* 6, vip_sys_* 5, ioremap 4, tasklet_* 6, __clk_is_enabled 5; mainline platform_device.h:280, proc_fs.h:124
+    confidence: verified
+  -
+    finding: Scaler maps to V4L2 m2m only for offline mode and only per-output; the hardware is 1 read DMA (IMG_V) feeding 3 write paths, and per-SC GOP/privacy/border/encoder slice-buffer features have no V4L2 m2m equivalent.
+    evidence: cvi_vip_img.c:281-282 sc_bounding; scaler.c:2302,2944,1812,1960; rga.c:88-123,832 m2m pattern
+    confidence: verified
+  -
+    finding: The display-engine code can be split from vpss cleanly at the source level (contiguous scaler.c ranges 2249-4296 + dsi_phy.c, own register sub-blocks DISP 0x8000/BT 0x9000/DSI 0xA000/DPHY region 1), but not at the hardware level without a shared SC_TOP regmap and an IRQ status demux.
+    evidence: scaler.c function map (lines 2249-4296 disp/gop/dsi/i80), scaler_reg.h:19-25 sub-block offsets, scaler_reg.h:34-35 single INTR_MASK/STATUS
+    confidence: verified
+  -
+    finding: cvitek,vpss has no vendor binding document (vendor docs describe 'cvitek,vip' with reg+interrupts only) and board DTS files are absent from both kernels, so the exact reg sizes, clock order and the 'vo'/'mipi_tx' reg regions are inferred from probe code only.
+    evidence: sg2000_linux_5.10/Documentation/devicetree/bindings/soc/cvitek/vip.txt, mipi_tx.txt; arch/riscv/boot/dts/cvitek contains only Makefile
+    confidence: verified
+open_questions:
+  - Exact meaning of PLL_G2_SSC_SYN_CTRL bit 1 written by sclr_disp_set_intf (scaler.c:3621, value 0x0a): mainline clk-cv1800.c maps bit 3 to DISPPLL synthesizer enable; bit 1 not located in the mainline table — unverified.
+  - Semantics of the 'vbat' registers 0x03000220 / 0x03005144 poked by vo_mipi_tx.c:752-779 (pinmux/top?) — unverified; needed for a DRM DSI driver bring-up.
+  - Whether the SC_TOP INTR_STATUS bits can be cleared selectively per sub-block (write-1-to-clear per bit) so two drivers can share the 'sc' IRQ with IRQF_SHARED — sclr_intr_clr implementation not read in detail; must be confirmed on hardware.
+  - Required reg size of region 0 (vendor code uses res->end-res->start; sub-blocks extend to >=0xC000) and whether vo's own reg regions (vo_core.c:172) overlap the same SC_TOP/DISP range — board DTS not available.
+  - Real clock-name literals used by vo_core.c (clk_disp_name/clk_bt_name/clk_dsi_name) — definitions not located in the greps performed.
+  - Availability/licensing of the CVITEK MPI userspace (libvpss/libvo) that uses these 49+10 ioctls — needed only for the lift-and-shift option; not in the repos.
+  - Power/suspend behavior: vpss_suspend/resume and sclr_ctrl_init(is_resume=true) (scaler.c:4316-4452) re-reads timing from registers — unclear whether the DISP keeps running across Linux suspend (bootloader splash handoff).
+  - Whether the IMG_D->SC_D->DISP online path (disp_from_sc) is needed by any target product; if not, a DRM driver can ignore SC_D entirely.
+  - Mainline dma-heaps/CMA sizing on SG2000 (256 MiB-class memory) for VB-pool-equivalent buffers — not analyzed.
+loc_total: 25815

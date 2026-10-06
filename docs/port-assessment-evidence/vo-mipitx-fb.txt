@@ -1,0 +1,280 @@
+Phase-1 reader report: vo-mipitx-fb (generated 2026-10-06; evidence as file:line in the named repository; see docs/sg2000-kernel-port-plan.md)
+
+scope: Display path of the SG2000/CV181x osdrv suite: interdrv/v2/vo (vo_core.c, chip/cv181x/vo.c, vo_sdk_layer.c, vo_mipi_tx.c, common/vo_rgn_ctrl.c, proc/*), interdrv/v2/fb/cvifb.c, the register HAL they call in interdrv/v2/vpss/chip/cv181x (scaler.c DISP/GOP/DSI/BT/LVDS/I80 sections, dsi_phy.c, scaler_reg.h) and the uAPI headers vo_uapi.h, vo_disp.h, vo_mipi_tx.h, cvi_comm_vo.h, cvi_comm_mipi_tx.h, cvi_vo_ctx.h. Mapped against Linux 7.3-rc6 DRM/KMS and the vendor 5.10 kernel. LOC counted: vo 6964 (incl. proc + headers), fb 869, uAPI 1342 (= 9175); register HAL used by the display path ~10.8k lines of which ~2050 lines of scaler.c (L2249-4300) plus dsi_phy.c (440) are display-specific.
+kernel_interface: Two char devices plus one fbdev: (1) /dev/cvi-vo: cdev + class "cvi-vo" (vo_core.c:85-108), fops open/release/unlocked_ioctl/compat_ioctl/mmap/poll (vo_core.c:41-51). Only two ioctl numbers, VO_IOC_G_CTRL / VO_IOC_S_CTRL (magic 'o', base 0x20; vo_uapi.h:9-12) carrying struct vo_ext_control {id, sdk_id, value/ptr} (vo_uapi.h:96-105); the id field multiplexes 30 VO_IOCTL_* sub-commands (vo_uapi.h:13-48; handled in vo.c:1348-1940 _vo_s_ctrl and vo.c:1942-2030 _vo_g_ctrl) and VO_IOCTL_SDK_CTRL further multiplexes 31 VO_SDK_* commands (vo_uapi.h:50-82; vo_sdk_layer.c:1465-1881 vo_sdk_ctrl: SET/GET_PUBATTR, SET/GET_VIDEOLAYERATTR, SET/GET_CHNATTR, ENABLE/DISABLE dev/layer/chn, SEND_FRAME, SHOW/HIDE/PAUSE/RESUME, SET/GET_CHNROTATION, SET/GET_DISPLAYBUFLEN, SUSPEND/RESUME, CLEAR_CHNBUF). mmap() maps a 4 KiB kzalloc'd struct cvi_vo_ctx (VO_SHARE_MEM_SIZE 0x1000, cvi_vo_ctx.h:14) into userspace via remap_pfn_range (vo.c:2139-2165); /proc/cvitek/vo and vo_disp proc files (vo_proc.c:448, vo_disp_proc.c). poll() always returns 0 (vo.c:2167-2170). (2) /dev/cvi-mipi-tx: miscdevice (vo_mipi_tx.c:37, 574-590), 10 ioctls magic 't' (vo_mipi_tx.h:110-128): SET/GET_DEV_CFG (lanes, timing, format, pixel clock), SET_CMD / GET_CMD (raw DSI packets by data-type), ENABLE/DISABLE (HS/idle), SET/GET_HS_SETTLE, SUSPEND/RESUME; plus /proc vo_mipi_tx (vo_mipi_tx_proc.c:146). (3) /dev/fb0 from cvi_fb.ko: classic fbdev (cvifb.c:540-566 fb_ops, 714 register_framebuffer), 8bpp LUT / 16bpp ARGB4444|1555 / 32bpp ARGB8888 (cvifb.c:300-312), pan_display, no real ioctl (cvifb.c:530-538). No V4L2, no DRM anywhere in the path.
+hw_blocks:
+  - DISP timing generator + 3-plane DMA read engine at SCL_TOP+0x8000 (0x0A088000): TOTAL/VSYNC/VFDE/VMDE/HSYNC/HFDE/HMDE registers (scaler_reg.h:257-264, programmed in scaler.c:3179-3209), tgen enable bit7 of DISP_CFG (scaler.c:3043-3056), shadow registers with force-update bit16 (scaler.c:2249-2300, 3031-3035), addr0/1/2 L/H + pitch_y/pitch_c + offset/size (scaler.c:3290-3340), input CSC (601/709 YUV->RGB) and output CSC (RGB->YUV for BT), pattern generator, frame/window bg colour, 65-entry gamma LUT (scaler_reg.h:305-307, SCL_DISP_GAMMA_NODE scaler.h:33), 4 'cover' solid-colour windows (scaler_reg.h:325-327, SCL_MAX_COVER_INST 4), AXI/BW debug status
+  - DISP GOP overlay (OSD) at SCL_TOP+0x8800: on CV181x two GOP layers (SCL_MAX_GOP_INST 2, scaler.h:27) each with 8 overlay windows (SCL_MAX_GOP_OW_INST 8, scaler.h:22); formats ARGB8888/ARGB4444/ARGB1555/256-colour LUT/16-colour LUT/font (scaler.c:2688-2700 reg_map_fmt), per-window addr/pitch/crop/size/H-V range, colour key, optional x2 h/v upscale (vo.c:495-563); layer 0 used by VO RGN overlays (vo.c:495-563, layer=0), layer 1 window 0 used by cvifb (cvifb.c:74-95, layer=1)
+  - SCL_TOP output mux and parallel encoders (0x0A080000): VO_MUX register +0x70 selects DISABLE/RGB/SW/I80/BT601/BT656/BT1120/BT1120R/SERIAL_RGB/HW_MCU (scaler.c:3601-3611, scaler.h:1004-1016), VO pad-mux registers +0x90..+0xAC map 28 VO data/clk signals onto MIPI TX/RX pads and VIVO pads (scaler_reg.h:45-53, vo_disp.h enum sclr_top_vo_sel), BT encoder +0x60/+0x64 with SAV/EAV codes (vo.c:466-472), LVDS TX control +0x50 (VESA/JEIDA, 6/8/10-bit, dual link; vo.c:386-407)
+  - I80 / HW-MCU (8080-style) LCD interface in DISP block +0x200..+0x234 (scaler_reg.h:310-322): hardware command FIFO hw_mcu_cmd_send (scaler.c:4190-4227), sw_mode packet injection (scaler.c:4227-4290); CPU-side pixel packing path in vo.c:737-900 is incomplete (mmap calls commented out) and the SDK I80 setup is #if 0 (vo_sdk_layer.c:617-651)
+  - MIPI DSI MAC (CVITEK-specific, not DesignWare) at SCL_TOP+0xA000 (scaler_reg.h:370-379): MAC_EN mode register (IDLE/HS/ESC/SPKT), HS_0/HS_1 config (lanes 1/2/4, RGB565/666/888/101010, line width; scaler.c:4108-4126), ESC register + 16-byte LPDT TX FIFO (SCL_MAX_DSI_LP 16, scaler.h:20) and 4-byte RX (BTA reads, scaler.c:4042-4106); ECC and CRC16 of long packets computed in software (scaler.c:3877-3970); only video burst mode accepted (vo_mipi_tx.c:95-108)
+  - DSI wrapper / D-PHY at 0x0A0D1000 (scaler_reg.h:6, 382-416): 5 physical lanes with per-lane logical role select and P/N swap (dsi_phy.c:118-135), lane enable + preamble (dsi_phy.c:68-78, preamble when >1.5 Gbps vo_mipi_tx.c:217), TX PLL with in-driver VCO/divider math (dsi_phy.c:237-334) that also touches VIP_SYS_VIP_CLK_CTRL0 bit4 (dsi_phy.c:255-259), HS prepare/zero/trail (dsi_phy.c:423-440), LP manual override bit-bang path for 'sw' DCS mode (dsi_phy.c:352-421), LVDS/sub-LVDS enable + bias/vsel (dsi_phy.c:227-234)
+  - VIP_SYS glue at 0x0A0C8000 (owned by cv181x_base: base.c:866-874; reg_vip_sys.h:8 VIP_SYS_VIP_RESETS, :13 VIP_CLK_CTRL0, :49 VIP_RESETS1) plus hard-coded ioremaps: PLL register 0x03002840 inside the clock controller (scaler.c:3613-3625), AXI real-time priority 0x0A0C8070 (scaler.c:4625-4636), VBAT power-fail status/enable 0x03000220/0x03005144 (vo_mipi_tx.c:776-783)
+  - VBAT power-loss interrupt (platform irq 0 of cvitek,mipi_tx, vo_mipi_tx.c:614) whose ISR sends DCS 0x28 and asserts panel reset (vo_mipi_tx.c:735-773); reboot notifier does the same (vo_mipi_tx.c:716-733)
+  - Optional rotation path: VO frames rotated by the DWA/GDC engine through base callbacks (vo.c:1150-1180 _mesh_gdc_do_op_cb, vo_sdk_layer.c:1192-1250 DEFAULT_MESH_PADDR 0x80000000)
+dt_expectations:
+  compatibles:
+    - cvitek,vo (vo_core.c:351-357) - no reg, no irq; only clocks
+    - cvitek,mipi_tx (vo_mipi_tx.c:876) - irq index 0 = VBAT, clocks, 3 GPIOs
+    - cvitek,fb (cvifb.c:809-812) - memory-region + reg[0] (only used for fix.mmio_start, cvifb.c:625-630)
+    - cvitek,vpss (vpss_core.c:1764) - actual owner of DISP/DSI/D-PHY registers and the 'sc' IRQ; vo/fb cannot probe usefully without it
+    - cvitek,base / vip_sys (base.c:866-874) - reg[0] = VIP_SYS 0x0A0C8000, provides vip_sys_reg_write_mask used by dsi_phy.c:255-259
+  clock_names:
+    - vo: clk_disp, clk_bt, clk_dsi (vo_interfaces.h:11-13, vo_core.c:127-141)
+    - mipi_tx: clk_disp, clk_dsi (vo_mipi_tx.c:60-61, 616-633)
+    - vpss: clk_sys_0, clk_sys_1, clk_sys_2, clk_sc_top (vpss_core.c:1409-1410, 1457-1468)
+    - vendor provider names (vendor drivers/clk/cvitek/clk-cv181x.c:965-1217): clk_disp_vip, clk_dsi_mac_vip, clk_bt_vip, clk_sc_top_vip, clk_dsi_esc -> mainline include/dt-bindings/clock/sophgo,cv1800.h: CLK_DISP_VIP 121, CLK_DSI_MAC_VIP 122, CLK_BT_VIP 120, CLK_SC_TOP_VIP 114, CLK_DSI_ESC 98, CLK_LVDS0/1_VIP 123/124, CLK_DISP_SRC_VIP 161, CLK_DISPPLL 5 (clk-cv1800.c:124-135, 634-720)
+  irq_names:
+    - vpss: "sc" (vpss_core.c:1408, platform_get_irq_byname) - the SCL_TOP interrupt whose status word carries disp_frame_start/disp_frame_end/i80_frame_end bits (scaler.h:147-180); requested IRQF_SHARED (vpss_core.c:1664)
+    - vo: none; its own IRQ/ioremap code is #if 0 (vo_core.c:145-154, 183-192, 211-220) and it receives interrupts through base callback VO_CB_IRQ_HANDLER from vpss scl_isr (vpss_core.c:1357-1358, vo.c:2172-2184)
+    - mipi_tx: unnamed irq 0 = VBAT power fail (vo_mipi_tx.c:614, 776-783)
+  reg_names_or_count: vo: 0 regions. mipi_tx: 0 regions (uses vpss-provided bases). vpss: 2 unnamed regions: reg[0] = SCL_TOP 0x0A080000 (DISP +0x8000, BT +0x9000, DSI MAC +0xA000, DISP GOP +0x8800: scaler_reg.h:5,16,22-24), reg[1] = DSI wrap/D-PHY 0x0A0D1000 (scaler_reg.h:6; vpss_core.c:1421-1442 sclr_set_base_addr/dphy_set_base_addr). fb: 1 region (informational only). base: 1 region VIP_SYS 0x0A0C8000. Hard-coded ioremaps outside DT: 0x03002840, 0x0A0C8070, 0x08004544 (scaler.c:3615, 4632, 4648), 0x03000220, 0x03005144 (vo_mipi_tx.c:778-779).
+  gpios_and_misc_props:
+    - mipi_tx: reset-gpio, pwm-gpio, power-ct-gpio via of_get_named_gpio_flags (vo_mipi_tx.c:633-645), overridable by module_param_array gpio[6] (vo_mipi_tx.c:63-73); reset pulse sequenced after LP-11 (vo_mipi_tx.c:222-230)
+    - vo (LVDS/HW-MCU/BT): backlight/lcd-power/reset GPIO *numbers and polarity are passed from userspace inside VO_PUB_ATTR_S and requested with devm_gpio_request_one at runtime (vo.c:215-250, vo_sdk_layer.c:555, 659-664) - no DT description
+    - pinmux: 52 PINMUX_CONFIG() direct writes to 0x03001000 FMUX registers from vo.c:63-213 using vendor header drivers/pinctrl/cvitek/pinctrl-cv181x.h (vendor PINMUX_CONFIG macro at pinctrl-cv181x.h:21-24; e.g. PAD_MIPI_TXP2__VO_CLK0 = 2, cv181x_pinlist_swconfig.h:619); mainline pinctrl-sg2000.c:401-408 describes the same pads, so this becomes a DT pinctrl state
+    - vpss: optional u32 clock-freq-vip-sys1 (default 300 MHz, vpss_core.c:1472-1473)
+    - fb module params: mode_option, scale (x2 h/v), option bit0 double-buffer, bit1 'fb on vpss' (cvifb.c:826-842); mipi_tx module param debug bit0 selects sw (bit-bang) vs hw DCS transmit (vo_mipi_tx.c:76-80, 273)
+  reserved_memory_or_ion: fb: memory-region phandle resolved with of_reserved_mem_lookup -> framebuffer physical base/size, mapped with devm_ioremap and cleared with memset_io (cvifb.c:581-611, 672-676, 731-738). vpss: memory-region for its own use (vpss_core.c:1378-1395). VO video frames are not DT-described: they are VB-pool blocks (ION-backed via cv181x_sys) addressed by physical address - vb_physAddr2Handle in vo_send_frame (vo_sdk_layer.c:374-420), vb->buf.phy_addr[] programmed into DISP ADDR0/1/2 (vo.c:914-968, 662-700); rotation mesh freed with sys_ion_free (vo_sdk_layer.c:1444).
+  reset_handling: No reset_control_* usage in vo, fb, mipi_tx or vpss_core.c (grep). Block resets live in VIP_SYS_VIP_RESETS/RESETS1 (reg_vip_sys.h:8,49) handled by cv181x_base. Mainline cv18xx-reset.h:13 only defines RST_VIPSYS (whole VIP subsystem), no per-block DISP/DSI reset. 'smooth' boot handoff: if the timing generator (or I80) is already enabled by the bootloader, vo/mipi_tx skip interface/clock reconfiguration and read config back from registers (vo.c:2381-2393 smooth detection, vo.c:2089-2092 sclr_disp_cfg_setup_from_reg, vo_mipi_tx.c:647, vo.c:306-316).
+depends_on_modules:
+  - cv181x_vpss.ko - exports every register accessor the display path uses: 59 sclr_* symbols in scaler.c and 13 dphy_*/vip_sys_clk_setting symbols in dsi_phy.c (EXPORT_SYMBOL_GPL lists), owns the SCL_TOP/DSI/D-PHY ioremaps (vpss_core.c:1421-1442) and the shared 'sc' IRQ, and forwards disp interrupts to VO via VO_CB_IRQ_HANDLER (vpss_core.c:1357-1358); vo Makefile pulls vpss/Module.symvers (vo/Makefile KBUILD_EXTRA_SYMBOLS)
+  - cv181x_base.ko - module callback bus base_reg_module_cb/base_exe_module_cb (base_cb.h:33-48; vo_core.c:53-72; vo.c:1182-1192), job queues base_mod_jobs_init/exit/waitq_pop, base_get_jobs_by_chn, base_set_mod_ctx, base_fill_videoframe2buffer (vo.c:1030-1230, vo_sdk_layer.c:412), VIP_SYS register access vip_sys_reg_write_mask (base/chip/cv181x/vip_sys.c:100-104, used by dsi_phy.c:255-259)
+  - cv181x_sys.ko - VB pool and ION: vb_qbuf/vb_dqbuf/vb_done_handler/vb_release_block/vb_get_block_with_id/vb_physAddr2Handle (20 call sites in vo), sys_ion_free, sys_cache_flush (vo_sdk_layer.c:1444, 321; sys/common/sys.c:302-394 exports)
+  - cv181x_dwa.ko (optional, rotation): DWA_CB_MESH_GDC_OP / VO_CB_GDC_OP_DONE callbacks (vo.c:1150-1180, 2254-2261)
+  - cv181x_rgn.ko (optional, OSD): RGN handle callbacks VO_CB_GET/SET_RGN_HDLS, VO_CB_SET_RGN_CFG, VO_CB_SET_RGN_COVEREX_CFG (vo_cb.h:9-19, vo.c:2186-2240, vo_rgn_ctrl.c)
+  - vendor pinctrl header drivers/pinctrl/cvitek/pinctrl-cv181x.h (compile-time, vo/Makefile ccflags -I$(srctree)/drivers/pinctrl/cvitek/)
+  - vendor kernel symbols: arch_sync_dma_for_device (cvifb.c), __clk_is_enabled (22 sites), sched_setscheduler (vo.c:1279), do_exit from kthread (vo.c:1069, 1203), headers linux/streamline_annotate.h and linux/sys.h
+vendor_kernel_only_deps:
+  -
+    symbol_or_header: arch_sync_dma_for_device()
+    evidence: cvifb.c:410-411, 593-594, 702-703 (riscv branch); exported only in vendor arch/riscv/mm/dma-mapping.c:45 EXPORT_SYMBOL_GPL; mainline arch/riscv/mm/dma-noncoherent.c:69 defines it but exports nothing except dma_cache_alignment (:16)
+    replacement_in_mainline: Allocate the scanout buffer with the DMA API (dma_alloc_wc / drm_gem_dma, which uses dma_alloc_wc or dma_alloc_noncoherent: drm_gem_dma_helper.c:149-155) so no manual cache maintenance is needed; sg2000.dtsi:21 already sets dma-noncoherent
+    call_sites: 3
+  -
+    symbol_or_header: drivers/pinctrl/cvitek/pinctrl-cv181x.h PINMUX_CONFIG() (direct MMIO to 0x03001000)
+    evidence: vo.c:24 include; vo.c:63-213 (_disp_sel_remux/_disp_sel_pinmux) 52 call sites; vendor macro pinctrl-cv181x.h:17-24
+    replacement_in_mainline: pinctrl states in DT consumed by drivers/pinctrl/sophgo/pinctrl-sg2000.c (pads MIPI_TXP2/TXM2 etc. at pinctrl-sg2000.c:401-408); function value 2 = VO_* per vendor cv181x_pinlist_swconfig.h:611,619
+    call_sites: 52
+  -
+    symbol_or_header: Android ION / VB pool (sys_ion_free, sys_cache_flush, vb_*)
+    evidence: vo_sdk_layer.c:1444 sys_ion_free; :321 sys_cache_flush; vb_physAddr2Handle :404; vb_qbuf/vb_dqbuf/vb_done_handler/vb_release_block/vb_get_block_with_id across vo.c (20 sites); exports in sys/common/sys.c:302-394; ION removed from mainline staging in 5.11
+    replacement_in_mainline: DRM GEM DMA objects + dma-buf import (PRIME) / dma-heaps for producer side
+    call_sites: 22
+  -
+    symbol_or_header: base callback bus (base_reg_module_cb/base_exe_module_cb) and job queues (base_mod_jobs_*, base_get_jobs_by_chn)
+    evidence: include/common/kapi/base_cb.h:33-48; vo_core.c:53-72, 222-228; vo.c:1030-1060, 1182-1192; vo_sdk_layer.c:862-880; base_context.c:299, 712 (up(&jobs->sem) on vb_qbuf)
+    replacement_in_mainline: DRM atomic commit + vblank events; cross-driver links via dma-buf/dma-fence, not a private callback bus
+    call_sites: 21
+  -
+    symbol_or_header: sclr_*/dphy_* register HAL exported by cv181x_vpss (incl. sclr_set_base_addr/dphy_set_base_addr static bases)
+    evidence: 218 sclr_ + 32 dphy_ + 26 vip_ references in vo/fb (grep); 59 + 13 EXPORT_SYMBOL_GPL in scaler.c / dsi_phy.c; bases set in vpss_core.c:1441-1442
+    replacement_in_mainline: Fold the display-relevant ~2050 lines (scaler.c:2249-4300) + dsi_phy.c into the DRM driver and a PHY driver with their own ioremaps/regmaps; SCL_TOP shared registers via syscon regmap
+    call_sites: 276
+  -
+    symbol_or_header: vip_sys_reg_write_mask / VIP_SYS_VIP_CLK_CTRL0 (cv181x_base, 0x0A0C8000)
+    evidence: dsi_phy.c:255-259 (bt_div bit in PLL calc), dsi_phy.c:336-340 vip_sys_clk_setting; vo.c:430-472 writes 0x10080/0x100c0/0x10010/0x10000; base/chip/cv181x/reg_vip_sys.h:13
+    replacement_in_mainline: New 'sophgo,cv1800-vip-syscon' regmap (or extend clk-cv1800 if these are clock divider bits - unverified); nothing in mainline programs 0x0A0C8000 today
+    call_sites: 11
+  -
+    symbol_or_header: __clk_is_enabled()
+    evidence: 22 call sites in vo_core.c/vo.c/vo_sdk_layer.c/vo_mipi_tx.c (grep); still EXPORT_SYMBOL_GPL in mainline drivers/clk/clk.c:669 but it is a clk-provider internal (clk-provider.h), not a consumer API
+    replacement_in_mainline: Track enable state in driver / use runtime PM; clk_prepare_enable refcounting
+    call_sites: 22
+  -
+    symbol_or_header: Fixed-address ioremaps 0x03002840 (clock controller), 0x03000220 & 0x03005144 (top-syscon/rtc area), 0x0A0C8070 (VIP_SYS), 0x08004544 (DDR, CV182x only)
+    evidence: scaler.c:3615-3624, 4632, 4648; vo_mipi_tx.c:778-779; mainline owns 0x03002000 via clock-controller@3002000 (sg2000.dtsi:30) and 0x03000000 via syscon@3000000 'sophgo,cv1800b-top-syscon' (cv180x.dtsi:28-29)
+    replacement_in_mainline: clk API for the PLL bit (needs identification of 0x840 within clk-cv1800 - unverified), syscon_regmap_lookup_by_phandle for 0x03000220/0x03005144, drop DDR patch
+    call_sites: 5
+  -
+    symbol_or_header: <linux/streamline_annotate.h>, <linux/sys.h> (vendor headers)
+    evidence: vo_core.h:70, vo.h:97, vo.h:103; present in vendor include/linux/, absent in mainline (ls)
+    replacement_in_mainline: Remove includes
+    call_sites: 3
+  -
+    symbol_or_header: sched_setscheduler() + MAX_USER_RT_PRIO; do_exit() from kthread
+    evidence: vo.c:1257, 1279; vo.c:1069, 1203; vendor kernel/sched/core.c:5521 exports sched_setscheduler, mainline kernel/sched/syscalls.c:817 exports only sched_set_fifo; mainline include/linux/sched/prio.h has no MAX_USER_RT_PRIO (only MAX_RT_PRIO :16)
+    replacement_in_mainline: sched_set_fifo(); return from thread fn or kthread_exit() (include/linux/kthread.h:119)
+    call_sites: 4
+userspace_contract: The kernel contains no panel knowledge: no DSI init tables exist in osdrv (grep for dsc_instr/panel tables finds only the struct definition cvi_comm_mipi_tx.h:12-17). Panel bring-up is driven by the CVI SDK middleware (libvo/sample code; not in this repo) through /dev/cvi-mipi-tx: CVI_VIP_MIPI_TX_SET_DEV_CFG supplies lane map/P-N swap, output format, pixel clock and full sync timing (struct combo_dev_cfg_s, vo_mipi_tx.h:55-66) and the kernel then programs D-PHY, DSI MAC, DISP timing and toggles the reset GPIO (vo_mipi_tx.c:148-234); CVI_VIP_MIPI_TX_SET_CMD sends each DCS/generic packet by raw data-type (vo_mipi_tx.c:257-276, 418-470; ECC/CRC done in kernel scaler.c:3877-3970); CVI_VIP_MIPI_TX_ENABLE switches to HS (vo_mipi_tx.c:298-302). For LVDS/BT/HW-MCU the whole interface config including raw GPIO numbers and MCU init instruction lists travels in VO_PUB_ATTR_S via VO_SDK_SET_PUBATTR (vo_sdk_layer.c:448-756; cvi_comm_vo.h VO_INTF_* bits :24-38). Frames reach the display either via SYS bind from VPSS (VB blocks pushed with vb_qbuf; base_context.c:712 wakes the VO 'cvitask_disp' SCHED_FIFO kthread vo.c:1030-1230) or explicitly via VO_SDK_SEND_FRAME, which looks the frame up by *physical address* (vb_physAddr2Handle, vo_sdk_layer.c:404); the VO keeps >=1 buffer on-screen and re-queues from the disp_frame_end IRQ (vo.c:2296-2340). Userspace also mmaps the 4 KiB cvi_vo_ctx shared state (vo.c:2139-2165) and reads /proc files. Single device/layer/channel only (VO_MAX_DEV_NUM = VO_MAX_LAYER_NUM = VO_MAX_CHN_NUM = 1, cvi_defines.h:312-315). Binary compatibility: a DRM port breaks all of this (different device nodes, ioctls, physical-address passing, mmap'd ctx); panel init moves into drivers/gpu/drm/panel/* selected by DT; frame handoff becomes dma-buf import (PRIME) + atomic page flips, and the fbdev users (/dev/fb0) keep working through drm_fbdev_dma but with XRGB8888 (or a fourcc chosen via drm_client_setup_with_fourcc) instead of the vendor default 16bpp ARGB4444 and without the 8-bit LUT mode. An out-of-tree compat shim re-implementing VO_IOC_*/mipi_tx ioctls over DRM would be a separate project and is not recommended.
+api_breakages_5_10_to_7_3:
+  -
+    api: class_create(THIS_MODULE, name)
+    what_changed: Owner argument dropped (mainline include/linux/device/class.h:226 class_create(const char *name); vendor include/linux/device/class.h:259 two-arg macro)
+    fix: class_create(CVI_VO_CLASS_NAME)
+    severity: trivial
+    call_sites: 1
+  -
+    api: struct platform_driver .remove returning int; legacy .suspend/.resume
+    what_changed: remove is void (platform_device.h:280); legacy suspend/resume still exist (:282-283) but are deprecated in favour of dev_pm_ops
+    fix: void remove; SIMPLE_DEV_PM_OPS
+    severity: trivial
+    call_sites: 3
+  -
+    api: of_get_named_gpio_flags() / <linux/of_gpio.h> / OF_GPIO_ACTIVE_LOW
+    what_changed: Header removed; symbol only remains inside drivers/gpio/gpiolib-of.c (no public declaration)
+    fix: devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH) etc.; DT property names become reset-gpios/enable-gpios
+    severity: moderate
+    call_sites: 3
+  -
+    api: Integer GPIO API: devm_gpio_request_one, gpio_set_value, gpio_is_valid, GPIOF_*
+    what_changed: <linux/gpio.h> is a 22-line stub; legacy API lives in <linux/gpio/legacy.h> behind CONFIG_GPIOLIB_LEGACY (drivers/gpio/Kconfig:6-7); GPIO numbers supplied by userspace ioctls (vo.c:215-250, vo_sdk_layer.c:555, 659-664) are not acceptable upstream
+    fix: gpiod descriptors from DT (panel reset/enable belong to the panel driver or a regulator/backlight node)
+    severity: moderate
+    call_sites: 20
+  -
+    api: sched_setscheduler(SCHED_FIFO) with MAX_USER_RT_PRIO; do_exit() in kthread
+    what_changed: sched_setscheduler no longer exported (only sched_set_fifo, kernel/sched/syscalls.c:817); MAX_USER_RT_PRIO removed; do_exit from kthreads replaced by kthread_exit/return
+    fix: sched_set_fifo(); return 0 from thread (or drop the kthread entirely in a DRM design)
+    severity: trivial
+    call_sites: 4
+  -
+    api: arch_sync_dma_for_device()
+    what_changed: Not exported in mainline (vendor-only EXPORT in arch/riscv/mm/dma-mapping.c:45)
+    fix: Use DMA API allocations (drm_gem_dma) or dma_sync_single_for_device on DMA-mapped memory
+    severity: moderate
+    call_sites: 3
+  -
+    api: fbdev driver model: FBINFO_DEFAULT, cfb_* ops, FBINFO_HWACCEL_YPAN, register_framebuffer
+    what_changed: FBINFO_DEFAULT removed from include/linux/fb.h (grep empty); default ops now FB_DEFAULT_IOMEM_OPS (fb.h:563); fbdev is a deprecated subsystem for new drivers (Documentation/gpu/drm-kms-helpers.rst:22; drivers/video/fbdev/Kconfig:35-37) and DRM provides /dev/fb0 emulation via drm_fbdev_dma (include/drm/drm_fbdev_dma.h:10-16, used by tidss_drv.c:18,187 and ingenic-drm-drv.c:35)
+    fix: Delete cvifb.c; map GOP window to a DRM overlay/primary plane and enable drm_client_setup()
+    severity: hard
+    call_sites: 4
+  -
+    api: __clk_is_enabled()
+    what_changed: Still exported (clk.c:669) but clk-provider internal; consumer drivers must not use it
+    fix: Driver-side enabled flag / runtime PM
+    severity: trivial
+    call_sites: 22
+  -
+    api: Direct pinmux writes via vendor PINMUX_CONFIG macro
+    what_changed: No equivalent header; mainline pinctrl-sg2000 owns 0x03001000
+    fix: pinctrl-names/pinctrl-0 states in DT
+    severity: moderate
+    call_sites: 52
+  -
+    api: Fixed ioremap() of clock-controller / syscon / VIP_SYS addresses
+    what_changed: Regions are owned by clk-cv1800 and sophgo,cv1800b-top-syscon in mainline; conflicting raw writes are not accepted
+    fix: clk_set_rate/clk_prepare_enable on CLK_DISPPLL-derived clocks, syscon regmap, new vip-sys syscon binding
+    severity: moderate
+    call_sites: 5
+  -
+    api: ION / VB-pool buffer model (physical addresses in ioctls)
+    what_changed: ION removed from mainline (5.11); no mainline replacement for passing physical addresses
+    fix: GEM DMA + dma-buf import; VPSS output via V4L2 dma-buf export
+    severity: hard
+    call_sites: 22
+  -
+    api: <linux/streamline_annotate.h>, <linux/sys.h>
+    what_changed: Vendor-only headers absent in mainline
+    fix: Remove includes
+    severity: trivial
+    call_sites: 3
+  -
+    api: remap_pfn_range() of kzalloc'd shared ctx + /proc state sharing
+    what_changed: Still compiles, but exporting kernel structs to userspace by mmap is not an acceptable upstream ABI
+    fix: Drop; DRM properties/debugfs instead
+    severity: moderate
+    call_sites: 1
+mainline_framework_fit: Target framework: DRM/KMS (drivers/gpu/drm/sophgo/), not fbdev and not V4L2. Mapping: one drm_crtc = DISP timing generator + its DRAM fetch engine (mode set = sclr_disp_set_timing registers scaler.c:3179-3209; enable = DISP_CFG tgen bit scaler.c:3043; vblank = disp_frame_end bit of the SCL_TOP interrupt scaler.h:147-180; atomic flush = shadow-mask + force-update bit scaler.c:2249-2300, 3031-3035, which gives clean double-buffered register updates). Primary plane = DISP video layer: formats map directly to DRM fourccs (YUV420/422 planar, NV12/NV21/NV16/NV61, YUYV/YVYU/UYVY/VYUY, RGB888/BGR888 packed; vo_sdk_layer.c:24-170) with 64-byte stride alignment (VIP_ALIGNMENT vo_common.h:9), crop via DISP_OFFSET/SIZE and dst window via HMDE/VMDE (scaler.c:3253-3340); planar RGB and HSV formats have no fourcc and are dropped. Overlay planes = GOP windows: 2 layers x 8 windows with ARGB8888/ARGB4444/ARGB1555/C8 (scaler.c:2688-2777), 16-byte alignment (GOP_ALIGNMENT vo_common.h:10), optional 2x upscale, colour key -> expose e.g. 2-4 drm_plane overlays (one per window) with zpos fixed; DRM_FORMAT_C8 requires a palette path (sclr_gop_update_256LUT, scaler.c:2512; note LUT cannot be updated while the window is enabled, cvifb.c:458-460). Cover windows and gamma LUT -> CRTC GAMMA_LUT property (65 nodes scaler.h:33; applied when AXI idle, vo.c:2328-2333). Encoders/bridges: (a) DSI: drm_encoder + mipi_dsi_host implementing attach/detach/transfer (include/drm/drm_mipi_dsi.h:90-97); transfer() = sclr_dsi_dcs_write_buffer/read_buffer logic (scaler.c:3877-4106) including software ECC/CRC16 exactly like sun6i_dsi_ecc_compute/crc_ccitt (sun6i_mipi_dsi.c:225,256; drm_mipi_dsi.c:558 leaves ECC to the host); attach() must reject MIPI_DSI_MODE_VIDEO_SYNC_PULSE/EVENT and command mode since the MAC only does video burst (vo_mipi_tx.c:95-108). (b) D-PHY: separate generic PHY driver (drivers/phy/sophgo/phy-cv1800-dphy.c) wrapping dsi_phy.c:68-135, 237-334, 423-440 with phy_configure(mipi_dphy opts) - mirrors sun6i_mipi_dsi.c:1179 devm_phy_get(\"dphy\") + phy-sun6i-mipi-dphy.c (648 lines); the in-driver PLL math resembles sprd_dsi.c:756 dphy_pll_config/megacores_pll.c. The VIP_CLK_CTRL0 bt_div bit written in dsi_phy.c:255-259 needs a syscon or a clk-cv1800 extension. (c) Parallel BT601/656/1120 -> second drm_encoder of type DRM_MODE_ENCODER_TVDAC/DPI with a drm_bridge chain (display-connector / of-display-mode bridge); LVDS -> encoder + panel-lvds (uses the same D-PHY pads in LVDS mode dsi_phy.c:227-234). (d) I80/HW-MCU -> no clean fit (closest is DBI/tinydrm; the vendor path is itself incomplete) - defer. GEM/fbdev: DRM_GEM_DMA_DRIVER_OPS_VMAP + drm_client_setup() + drm_fbdev_dma (tidss_drv.c:13,18,102,187; drm_fbdev_dma.h:10-16); drm_gem_dma works on the 'dma-noncoherent' SG2000 (sg2000.dtsi:21) because it allocates with dma_alloc_wc/dma_alloc_noncoherent (drm_gem_dma_helper.c:149-155). Closest reference drivers: ingenic-drm-drv.c (1683 lines; small SoC, primary + overlay planes via drm_universal_plane_init/drm_crtc_init_with_planes :1225-1254, drm_fbdev_dma) for the CRTC/plane layout; sun6i_mipi_dsi.c (1265 lines) for a non-DesignWare DSI host with external PHY and SW ECC/CRC; sprd_dsi.c (1066 lines) for in-driver DPHY PLL; mcde_dsi.c (1242 lines) for a vendor DSI with regmap glue. Structural misfits to plan for: (1) SCL_TOP registers (VO_MUX +0x70, LVDSTX +0x50, BT_ENC +0x60, INTR_MASK/STATUS +0x30/+0x34) sit in the same 4 KiB block as the scaler-top config and the IRQ is shared with VPSS (vpss_core.c:1333-1363) - a future V4L2 VPSS driver and the DRM driver must share them via a syscon regmap or a parent MFD/'vip' driver; (2) the 'disp_from_sc' online path (scaler.c:4607-4620, DISP fed directly by scaler without DRAM) has no DRM analogue and should be dropped; (3) VBAT power-fail and reboot-notifier DCS-off belong in the panel driver / shutdown callback. What is portable: essentially all of scaler.c DISP/GOP/DSI/BT/LVDS/I80 register code and dsi_phy.c (pure MMIO on a static base), the timing tables (vo_sdk_layer.c:172-222) and timing conversion (vo.c:592-615). What is SDK glue to discard: vo_sdk_layer.c attr model, cvi_vo_ctx shared memory, VB/job queues and kthread, base callback bus, RGN handle bookkeeping (vo_rgn_ctrl.c), proc files, I80 CPU packing.
+port_options:
+  -
+    name: A. New minimal DRM/KMS driver (DSI video-mode panel only)
+    description: drivers/gpu/drm/sophgo/cv1800-drm: one CRTC (DISP tgen + DRAM fetch), one primary plane (RGB/YUV formats above), one DSI encoder/host, D-PHY as a separate drivers/phy driver, drm_gem_dma + drm_fbdev_dma for /dev/fb0, DT bindings (disp, dsi, dphy, vip-syscon). Panels come from drivers/gpu/drm/panel/* (107 DSI panel drivers in 7.3). No GOP overlays, no BT/LVDS/I80, no rotation.
+    effort_engineer_weeks: 8-14 engineer-weeks to a reviewed, working driver on one board/panel (first picture typically 3-6 weeks); add 3-6 weeks for upstream review rounds of bindings + driver + phy.
+    assumptions: One engineer experienced with DRM atomic and DSI; access to an SG2000 board whose DSI pads are free (on Milk-V Duo S the MIPI_TX pads are muxed to sdhci1, sg2000-milkv-duo-s.dts:116-133) with a panel whose init sequence is known or already in mainline; no datasheet beyond the vendor code; mainline clk/pinctrl/syscon already present; a logic analyser or scope for D-PHY debugging.
+    risks:
+      - D-PHY PLL/timing formulas (dsi_phy.c:237-334) are reverse-engineered constants; HS settle values may need per-panel tuning
+      - Undocumented register 0x03002840 bit write (scaler.c:3613-3625) and VIP_SYS clock bits (dsi_phy.c:255-259) must be understood and expressed through clk/syscon
+      - Shared SCL_TOP register block + shared 'sc' IRQ with any future VPSS/V4L2 driver; needs an agreed syscon/MFD split early
+      - Video burst mode only; panels requiring command mode or sync pulses are unsupported by hardware/driver
+      - Boot-logo handoff (smooth mode) from vendor U-Boot not handled unless state readback is implemented
+  -
+    name: B. Full-featured DRM driver (A + overlays, parallel/LVDS encoders, gamma)
+    description: Option A plus 2-4 GOP overlay planes (ARGB8888/4444/1555, C8 with palette, colour key, 2x scale), CRTC gamma LUT, BT601/656/1120 parallel encoder with drm_bridge chain, LVDS encoder/panel-lvds, VBAT/reboot DCS-off integrated into panel/shutdown, optional cover planes as solid-fill overlays.
+    effort_engineer_weeks: 18-30 engineer-weeks including upstream review; BT/LVDS bring-up requires suitable boards/panels and adds the largest uncertainty.
+    assumptions: Option A completed first; test hardware for each interface (BT1120 sink, LVDS panel); maintainers accept a syscon-based split of SCL_TOP.
+    risks:
+      - GOP LUT not updatable while window enabled (cvifb.c:458-460) complicates C8 atomic updates
+      - Plane position/alignment constraints (16/64-byte, window ranges) need atomic_check validation to avoid HW hangs/BW failures (vo.c:2306-2312 bw_fail)
+      - LVDS shares the D-PHY and pads with DSI; PHY driver must support both modes (dsi_phy.c:200-235)
+      - I80/HW-MCU has no good DRM model and the vendor implementation is incomplete; leave out
+  -
+    name: C. Forward-port vendor vo/mipi_tx/fb as out-of-tree modules on 7.3 (keep CVI SDK ABI)
+    description: Keep the osdrv architecture and ioctl ABI so existing CVI middleware (libvo, sample_vio) keeps working: fix the API breakages listed, replace ION/VB backing with dma-heaps/CMA inside cv181x_sys, add exports or DMA-API equivalents for arch_sync_dma_for_device, port the vendor pinmux header or convert to pinctrl, port base/sys/vpss first (hard dependency chain sys -> base -> vpss -> vo/fb).
+    effort_engineer_weeks: 6-12 engineer-weeks for the display subset once base/sys/vpss compile and load on 7.3 (which is a separate, larger effort owned by the camera/VPSS port); cannot be upstreamed.
+    assumptions: Goal is only to run the vendor SDK on a newer kernel, not mainline inclusion; vendor DTS for cvitek,vo/mipi_tx/fb/vpss/base nodes is recreated (board DTS not in either repo); GPL-2.0 module licence retained.
+    risks:
+      - Perpetual maintenance against internal kernel API churn; every release can break it (12 breakage classes already between 5.10 and 7.3)
+      - Raw GPIO numbers and physical addresses in the uAPI are insecure and fragile on gpiod/CMA-based kernels
+      - Conflicts with mainline clk/pinctrl/syscon drivers that now own 0x03001000/0x03002000/0x03000000 (vendor code writes them directly)
+      - Relies on vendor-only kernel exports; ION replacement changes buffer semantics for all SDK modules
+  -
+    name: D. Hybrid bridge: thin DRM driver reusing scaler.c/dsi_phy.c verbatim as a HAL library
+    description: Copy the ~2500 display-relevant HAL lines (scaler.c:2249-4300, dsi_phy.c, scaler_reg.h) into the DRM driver with minimal edits (own ioremap, remove EXPORTs, replace vip_sys calls) to reach first light quickly, then refactor toward regmap/clean register helpers before upstream submission.
+    effort_engineer_weeks: 4-8 engineer-weeks to first picture (fastest path), then converges into Option A's 8-14 total because the HAL must be reshaped for review.
+    assumptions: Same as A; accepts an initial 'ugly' driver for bring-up and validation of the PLL/lane code before cleanup.
+    risks:
+      - Temptation to upstream vendor-style code (static globals, g_disp_cfg caches, ioremap of fixed addresses) will fail review
+      - Static single-instance base addresses in the HAL (scaler.c:697, dsi_phy.c:47-57) must be removed before the PHY can be a separate device
+key_findings:
+  -
+    finding: VO/fb/mipi_tx own no registers and no interrupt; everything is routed through cv181x_vpss, so the display path cannot be ported independently of the VPSS module in the vendor architecture.
+    evidence: vo_core.c:169-192 and 211-220 (#if 0 reg/irq code), vpss_core.c:1421-1442 (ioremap of SCL_TOP 0x0A080000 and DSI wrap 0x0A0D1000, sclr_set_base_addr/dphy_set_base_addr), vpss_core.c:1357-1358 (_vpss_call_cb(E_MODULE_VO, VO_CB_IRQ_HANDLER)), vo/Makefile KBUILD_EXTRA_SYMBOLS base/vpss/sys
+    confidence: verified
+  -
+    finding: The MIPI DSI host is CVITEK-specific (not DesignWare): a small MAC register set (MAC_EN/HS_0/HS_1/ESC/ESC_TX0-3/ESC_RX0-1) at SCL_TOP+0xA000, video burst mode only, 1/2/4 lanes, software-computed ECC/CRC16, 16-byte LPDT FIFO, 4-byte reads; this maps cleanly to mipi_dsi_host_ops.transfer like sun6i.
+    evidence: scaler_reg.h:370-379; scaler.c:3714-3780 (mode engine), 3877-4040 (packet TX with ecc/crc16), 4042-4106 (read), 4108-4126 (config); vo_mipi_tx.c:95-108 (rejects non-burst / command mode); mainline sun6i_mipi_dsi.c:225,256,1044-1047; drm_mipi_dsi.c:558
+    confidence: verified
+  -
+    finding: The D-PHY (0x0A0D1000) is a separate register block with programmable lane-role mapping and P/N swap, an in-driver PLL calculation, HS timing registers and an LVDS mode, and is also used for LVDS and for clocking BT/MCU outputs - it should become a generic PHY driver; its PLL code also writes VIP_SYS_VIP_CLK_CTRL0 via the base module.
+    evidence: dsi_phy.c:118-135 (lane sel/pn swap), 200-235 (dphy_init incl. LVDS), 237-334 (_cal_pll_reg, dphy_dsi_set_pll, dphy_lvds_set_pll), 255-259 (vip_sys_reg_write_mask VIP_SYS_VIP_CLK_CTRL0), 423-440 (hs settle); vo.c:430-472 (dphy_dsi_set_pll for BT/MCU); scaler_reg.h:382-416
+    confidence: verified
+  -
+    finding: Panel initialisation is entirely in userspace: the kernel holds no panel tables and only forwards raw DSI packets by data type from the CVI_VIP_MIPI_TX_SET_CMD ioctl; the only hard-coded DCS commands are 0x28/0x29 for suspend/resume/power-off.
+    evidence: grep for dsc_instr/panel tables in osdrv finds only cvi_comm_mipi_tx.h:12-17; vo_mipi_tx.c:257-276, 418-470 (SET_CMD -> sclr_dsi_dcs_write_buffer), 316-345 and 716-733 (0x28/0x29)
+    confidence: verified
+  -
+    finding: Frames reach the DISP engine as physical addresses of VB-pool (ION) blocks, either from VPSS binding (vb_qbuf wakes the VO SCHED_FIFO kthread through a semaphore) or from VO_SDK_SEND_FRAME which resolves a user-supplied physical address; the DISP address registers are shadowed and latched with a force-update bit at frame end.
+    evidence: vo_sdk_layer.c:374-420 (vb_physAddr2Handle, vb_qbuf), base_context.c:712 (up(&jobs->sem)), vo.c:1030-1230 (_vo_disp_thread), vo.c:662-700 (_vo_hw_enque -> sclr_disp_set_mem), vo.c:2296-2340 (vo_irq_handler), scaler.c:2249-2300, 3031-3035, 3290-3340
+    confidence: verified
+  -
+    finding: cvifb is a thin fbdev wrapper over GOP layer 1 window 0 of the DISP block, inheriting the mode from whatever VO/mipi_tx programmed, backed by a DT reserved-memory region; it depends on the vendor-only arch_sync_dma_for_device export and on FBINFO_DEFAULT, and new fbdev drivers are a deprecated path - drm_fbdev_dma replaces it.
+    evidence: cvifb.c:74-140 (layer = 1, sclr_gop_ow_set_cfg SCL_GOP_DISP), 581-611 (memory-region), 679-704 (timing from sclr_disp_get_hw_timing), 410/593/702 (arch_sync_dma_for_device), 663 (FBINFO_DEFAULT); mainline fb.h has no FBINFO_DEFAULT; Documentation/gpu/drm-kms-helpers.rst:22; include/drm/drm_fbdev_dma.h:10-16; tidss_drv.c:187 drm_client_setup
+    confidence: verified
+  -
+    finding: Interface selection and pinmux are done by raw register writes that collide with mainline owners: 52 PINMUX_CONFIG writes to the FMUX block (pinctrl-sg2000 territory), a PLL register write at 0x03002840 inside clock-controller@3002000, VBAT registers in the top-syscon area, VIP_SYS at 0x0A0C8000.
+    evidence: vo.c:63-213; vendor pinctrl-cv181x.h:17-24; scaler.c:3613-3625; vo_mipi_tx.c:776-783; scaler.c:4625-4636; mainline sg2000.dtsi:30, cv180x.dtsi:28-29, pinctrl-sg2000.c:401-408
+    confidence: verified
+  -
+    finding: Mainline 7.3 provides all the display clocks (CLK_DISP_VIP, CLK_DSI_MAC_VIP, CLK_DSI_ESC, CLK_BT_VIP, CLK_SC_TOP_VIP, CLK_LVDS0/1_VIP, CLK_DISP_SRC_VIP, CLK_DISPPLL) and pinctrl, but no DISP/DSI/D-PHY driver, no DT nodes for 0x0A080000/0x0A0D1000/0x0A0C8000, and only a subsystem-level RST_VIPSYS reset.
+    evidence: include/dt-bindings/clock/sophgo,cv1800.h:5,14,98,114,120-124,161; clk-cv1800.c:124-135,634-720; cv18xx-reset.h:13; grep of arch/riscv/boot/dts/sophgo/*.dtsi finds no vip/disp/dsi nodes; ls drivers/gpu/drm shows no sophgo directory
+    confidence: verified
+  -
+    finding: No upstream or RFC DRM driver for CV18xx/SG2000 display appears to exist as of 2026-10; web searches (lore/LWN/ratatoskr) surface only clk, dmamux, pinctrl, SDHCI and ASoC series for these SoCs.
+    evidence: WebSearch results: lwn.net/Articles/961338 (clock), lwn.net/Articles/969321 (dmamux), ratatoskr.run threads for ASoC CV1800 I2S (2026-01); no dri-devel hit for sophgo/cv1800/sg2000 display
+    confidence: likely
+  -
+    finding: The vendor VO supports exactly one device/layer/channel, rejects interlaced timing, and the I80 path is incomplete (CPU pixel packing with mmap calls commented out, SDK I80 setup #if 0); rotation depends on the DWA engine. Scope for a port can therefore be narrowed to DSI/BT/LVDS progressive output with one video plane plus OSD overlays.
+    evidence: cvi_defines.h:312-315; vo_sdk_layer.c:490-495 (interlaced rejected), 617-651 (#if 0 I80), 1192-1250 (DWA rotation); vo.c:737-900 (commented CVI_SYS_MmapCache)
+    confidence: verified
+  -
+    finding: Between 5.10 and 7.3 the display modules hit at least 12 API-break classes (class_create, void remove, of_gpio removal, legacy gpio gating, sched_setscheduler/MAX_USER_RT_PRIO, do_exit in kthread, arch_sync_dma export, FBINFO_DEFAULT, vendor headers, pinmux macro, fixed ioremaps, ION); all are mechanical except the fbdev and ION/VB buffer-model changes, which are architectural.
+    evidence: mainline include/linux/device/class.h:226, platform_device.h:280-283, gpio.h (22-line stub), gpio/legacy.h:87, kernel/sched/syscalls.c:817, kthread.h:119, arch/riscv/mm/dma-noncoherent.c (no EXPORT), fb.h (no FBINFO_DEFAULT) vs vendor class.h:259, platform_device.h:202, kernel/sched/core.c:5521, arch/riscv/mm/dma-mapping.c:45
+    confidence: verified
+  -
+    finding: On the Milk-V Duo S reference DTS the MIPI TX pads are already muxed to sdhci1, so DSI display bring-up on that board requires a different pin configuration (or a different board such as a panel-equipped SG2002 LicheeRV Nano).
+    evidence: arch/riscv/boot/dts/sophgo/sg2000-milkv-duo-s.dts:116-133 (PINMUX(PIN_MIPI_TXM4/TXP4/TXM3/TXP3, 1), PINMUX(PIN_MIPI_TXM2/TXP2, 7))
+    confidence: verified
+open_questions:
+  - Exact vendor board DTS for cvitek,vo / cvitek,mipi_tx / cvitek,fb / cvitek,vpss / base (reg, irq numbers, clock phandles, reserved-memory sizes) is not in either repo (SDK 'build' repo); expectations above are inferred from probe code - unverified against a real DTS.
+  - What register is 0x03002840 (written with |0x0a in sclr_disp_set_intf, scaler.c:3613-3625)? It lies in the clock controller; whether it corresponds to a DISPPLL/MIPIMPLL control bit already modelled in clk-cv1800.c is unverified.
+  - Meaning of 0x03000220 / 0x03005144 (VBAT interrupt status/enable, vo_mipi_tx.c:776-783) and which mainline syscon (top-syscon vs rtcsys) should expose them - unverified.
+  - Semantics of VIP_SYS_VIP_CLK_CTRL0 (0x0A0C8018) bits written by dsi_phy.c:255-259 and vo.c:430-472 (0x10000/0x10010/0x10080/0x100c0): are these clock dividers/muxes that belong in clk-cv1800, or glue needing a vip-sys syscon? Unverified.
+  - Does the vendor U-Boot program the DISP/DSI for a boot logo ('smooth' handoff, vo.c:2381-2393)? If so the DRM driver needs register-state readback or an explicit reset sequence - unverified.
+  - Can the DSI MAC do non-burst video or command mode at all, or is the vo_mipi_tx.c:95-108 restriction purely software? Unverified (no datasheet).
+  - Which panels/boards are the actual targets (DSI panel model and init sequence availability in drivers/gpu/drm/panel)? Determines whether a new panel driver is also needed.
+  - How will the shared SCL_TOP register block and the shared 'sc' interrupt be split between a DRM display driver and a future V4L2 VPSS/scaler driver (syscon regmap vs parent MFD)? Needs a design decision before upstream submission.
+  - GOP overlay blending details (alpha premultiplication, blend order between layer 0 and layer 1, interaction with the cover windows) are not documented in the code read - unverified.
+  - Is the fbdev default 16bpp ARGB4444 / 8bpp LUT behaviour relied on by any existing userspace, i.e. is a drm_fbdev_dma XRGB8888 console acceptable?
+loc_total: 9175
