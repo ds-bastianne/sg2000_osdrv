@@ -1,0 +1,651 @@
+Phase-2 agent output: dt-contract (generated 2026-10-06; evidence as file:line in the named repository; see docs/sg2000-kernel-port-plan.md)
+
+source_files:
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/common/dts/sg200x/sg200x_base.dtsi
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/common/dts/sg200x_riscv/sg200x_base_riscv.dtsi
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/common/dts/sg200x/sg200x_default_memmap.dtsi
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/common/dts/sg200x/sg200x_asic_bga.dtsi
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/common/dts/sg200x/sg200x_asic_qfn.dtsi
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/common/dts/sg200x/sg200x_asic_sd.dtsi
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/common/dts/sg200x/sg200x_asic_emmc.dtsi
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/common/dts/cv181x/cv181x_base.dtsi
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/common/dts/cv181x/cv181x_default_memmap.dtsi
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/common/dts/cv181x_riscv/cv181x_base_riscv.dtsi
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/duos/dts/cv181x_milkv_duos_sd.dts
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/duos/dts/cv181x_milkv_duos_emmc.dts
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/licheervnano/dts/cv181x_licheervnano_sd.dts
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/duos/memmap.py
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/licheervnano/memmap.py
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/duos/settings.mk
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/licheervnano/settings.mk
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/chip/sg200x/chip.mk
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/scripts/addons/load-systemko/S00kmod
+  - /home/user/sg2000_linux_5.10/include/dt-bindings/clock/cv181x-clock.h
+  - /home/user/sg2000_linux_5.10/include/dt-bindings/reset/cv181x-resets.h
+  - /home/user/sg2000_linux_5.10/drivers/staging/android/ion/cvitek/cvitek_ion.c
+  - /home/user/mainline_linux/include/dt-bindings/clock/sophgo,cv1800.h
+  - /home/user/mainline_linux/arch/riscv/boot/dts/sophgo/cv18xx-reset.h
+  - /home/user/mainline_linux/arch/riscv/boot/dts/sophgo/sg2000.dtsi
+  - /home/user/mainline_linux/arch/riscv/boot/dts/sophgo/cv180x.dtsi
+  - /home/user/mainline_linux/arch/riscv/boot/dts/sophgo/cv181x.dtsi
+  - /home/user/mainline_linux/arch/riscv/boot/dts/sophgo/sg2000-milkv-duo-s.dts
+  - /home/user/sg2000_osdrv/interdrv/v2/cif/chip/cv181x/cif.c
+  - /home/user/sg2000_osdrv/interdrv/v2/cif/chip/cv181x/drv/cif_drv.h
+  - /home/user/sg2000_osdrv/interdrv/v2/base/base.c
+  - /home/user/sg2000_osdrv/interdrv/v2/base/chip/cv181x/reg_vip_sys.h
+  - /home/user/sg2000_osdrv/interdrv/v2/base/chip/cv181x/vip_sys.c
+  - /home/user/sg2000_osdrv/interdrv/v2/sys/common/sys.c
+  - /home/user/sg2000_osdrv/interdrv/v2/vi/common/vi_core.c
+  - /home/user/sg2000_osdrv/interdrv/v2/vi/chip/cv181x/vi_interfaces.h
+  - /home/user/sg2000_osdrv/interdrv/v2/vpss/chip/cv181x/vpss_core.c
+  - /home/user/sg2000_osdrv/interdrv/v2/vpss/chip/cv181x/cvi_vip_sc.c
+  - /home/user/sg2000_osdrv/interdrv/v2/vpss/chip/cv181x/cvi_vip_img.c
+  - /home/user/sg2000_osdrv/interdrv/v2/vo/common/vo_core.c
+  - /home/user/sg2000_osdrv/interdrv/v2/vo/common/vo_mipi_tx.c
+  - /home/user/sg2000_osdrv/interdrv/v2/fb/cvifb.c
+  - /home/user/sg2000_osdrv/interdrv/v2/dwa/common/dwa_platform.c
+  - /home/user/sg2000_osdrv/interdrv/v2/ive/common/cvi_ive_interface.c
+  - /home/user/sg2000_osdrv/interdrv/v2/tpu/common/cvi_tpu_interface.c
+  - /home/user/sg2000_osdrv/interdrv/v2/vcodec/cvi_vcodec.c
+  - /home/user/sg2000_osdrv/interdrv/v2/vcodec/vcodec_common.c
+  - /home/user/sg2000_osdrv/interdrv/v2/vcodec/Makefile
+  - /home/user/sg2000_osdrv/interdrv/v2/jpeg/cvi_jpeg.c
+  - /home/user/sg2000_osdrv/interdrv/v2/jpeg/cvi_jpeg.h
+  - /home/user/sg2000_osdrv/interdrv/v2/cvi_vc_drv/cvi_vc_drv.c
+  - /home/user/sg2000_osdrv/interdrv/v2/rtos_cmdqu/rtos_cmdqu.c
+  - /home/user/sg2000_osdrv/interdrv/v2/mon/common/cvi_mon_interface.c
+  - /home/user/sg2000_osdrv/interdrv/v2/wiegand/cvi_wiegand.c
+  - /home/user/sg2000_osdrv/interdrv/v2/saradc/cv181x/cvi_saradc.c
+  - /home/user/sg2000_osdrv/interdrv/v2/rtc/cv181x/cvi_rtc.c
+  - /home/user/sg2000_osdrv/interdrv/v2/wdt/cv181x/cvi_wdt.c
+  - /home/user/sg2000_osdrv/interdrv/v2/pwm/cv181x/cvi_pwm.c
+  - /home/user/sg2000_osdrv/interdrv/v2/clock_cooling/cv181x/clock_cooling.c
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/p1/DIGEST.md
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/p1/sys-base.txt
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/p1/cif-snsr.txt
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/p1/vi-isp.txt
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/p1/vpss.txt
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/p1/vo-mipitx-fb.txt
+  - /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/p1/codec-others.txt
+nodes:
+  -
+    node: sys
+    compatible: cvitek,sys
+    reg: (none)
+    osdrv_consumer: sys/common/sys.c:914-926 (of_match cvitek,sys; no platform_get_resource/irq/clk)
+    mainline_mapping: No resources. Forward-port would add memory-region -> CMA pool (see sketch).
+    mismatches_with_probe_code: None. sg200x_base.dtsi:692-694.
+  -
+    node: base
+    compatible: cvitek,base
+    reg: <0x0 0x0a0c8000 0x0 0x20> (sg200x_base.dtsi:698)
+    reg_names: "vip_sys" (sg200x_base.dtsi:699)
+    osdrv_consumer: base/base.c:865-874 platform_get_resource(IORESOURCE_MEM,0) + devm_ioremap_resource -> vip_set_base_addr; of_match base.c:917
+    mainline_mapping: VIP_SYS block 0x0A0C8000 CONFIRMED by the DTS. No mainline provider (grep 0a0c8 in mainline sophgo clk/reset/DTS: none). Candidate: syscon + reset-simple (offset 0x0 VIP_RESETS, 0xc0 RESETS1) + clk-gate node. Only RST_VIPSYS=6 / RST_VIP_CAM0=99 exist in cv18xx-reset.h:13,80.
+    mismatches_with_probe_code: Declared size 0x20 is too small for actual use: base.c:876-878 writes VIP_AXI_SW 0x10 (ok) but cif.c:1803-1814 writes CLK_RATIO regs 0x30-0x48 via base, scaler.c raw-ioremaps 0x0A0C8070, dwa_platform.c:272 writes CLK_CTRL1 0x1c, reg_vip_sys.h defines offsets up to 0xe0 (line 1218) and RESETS1 0xc0 (Phase-1 sys-base). Works only because ioremap is page-granular. vo node declares the same block as 0xa0 (sg200x_base.dtsi:742). Recommend 0x100.
+    other_props: none
+  -
+    node: mipi_rx (cif)
+    compatible: cvitek,cif
+    reg: <0x0 0x0a0c2000 0x0 0x2000>, <0x0 0x0a0d0000 0x0 0x1000>, <0x0 0x0a0c4000 0x0 0x2000>, <0x0 0x0a0c6000 0x0 0x2000>, <0x0 0x03001c30 0x0 0x30> (sg200x_base.dtsi:669-671)
+    reg_names: "csi_mac0", "csi_wrap0", "csi_mac1", "csi_mac2", "pad_ctrl" (sg200x_base.dtsi:672)
+    interrupts: <26 IRQ_TYPE_LEVEL_HIGH>, <27 IRQ_TYPE_LEVEL_HIGH> parent plic0 (sg200x_base_riscv.dtsi:343-346)
+    interrupt_names: "csi0", "csi1" (sg200x_base_riscv.dtsi:345)
+    clocks: <&clk CV181X_CLK_CAM0>, <&clk CV181X_CLK_CAM1>, <&clk CV181X_CLK_SRC_VIP_SYS_2>, <&clk CV181X_CLK_MIPIMPLL>, <&clk CV181X_CLK_DISPPLL>, <&clk CV181X_CLK_FPLL> (sg200x_base.dtsi:677-678)
+    clock_names: "clk_cam0", "clk_cam1", "clk_sys_2", "clk_mipimpll", "clk_disppll", "clk_fpll" (sg200x_base.dtsi:679-680)
+    resets: <&rst RST_CSIPHY0>, <&rst RST_CSIPHY1>, <&rst RST_CSIPHY0RST_APB>, <&rst RST_CSIPHY1RST_APB> (sg200x_base.dtsi:674-675)
+    reset_names: "phy0", "phy1", "phy-apb0", "phy-apb1" (sg200x_base.dtsi:676)
+    other_props: snsr-reset = <&porta 2 GPIO_ACTIVE_LOW> x3 (base:673; Duo S dts:44 same; asic_qfn:6 portc 13 x3; LicheeRV Nano dts:189 only ONE entry <&porte 1 GPIO_ACTIVE_LOW>)
+    osdrv_consumer: cif/chip/cv181x/cif.c:2820-2855 (indexed MEM loop, MAX_LINK_NUM=3 cif_drv.h:4), platform_get_irq idx 0/1 (Phase-1 cif.c:2787-2791), devm_clk_get by names cif.c:~2800-2818, devm_reset_control_get phy0/phy1/phy-apb0/phy-apb1 (Phase-1 cif.c:2897-2910), of_match cif.c:3400
+    mainline_mapping: clk_cam0 -> CLK_CAM0 147 (vendor 91); clk_cam1 -> CLK_CAM1 148 (92); clk_sys_2 -> CLK_SRC_VIP_SYS_2 102 (136); clk_mipimpll -> CLK_MIPIMPLL 3 (3); clk_disppll -> CLK_DISPPLL 5 (5); clk_fpll -> CLK_FPLL 2 (2). Resets 70/71/72/73 (CSIPHY0, CSIPHY0RST_APB, CSIPHY1, CSIPHY1RST_APB) have NO macro in cv18xx-reset.h but raw indices work with sophgo,cv1800b-reset (reg 0x1000). IRQs 26/27 = SOC_PERIPHERAL_IRQ(10/11) in mainline numbering (sg2000.dtsi:3).
+    mismatches_with_probe_code: CONFIRMED pad_ctrl quirk: loop maps i=0..4 (all 5 entries), exits with i=5, then platform_get_resource(..,5) fails -> 'no pad_ctrl for cif' (cif.c:2820-2846); the 5th entry 0x03001c30 is mapped as reg_base[4] but never used. Real DTS has exactly 5 entries, so pad_ctrl is dead on these boards. reg-names unused by code. LicheeRV Nano gives 1 snsr-reset for 3 links (handling of missing entries unverified). clock-names 'clk_sys_2' etc. match.
+  -
+    node: vi
+    compatible: cvitek,vi
+    reg: <0x0 0x0a000000 0x0 0x80000> (sg200x_base.dtsi:704)
+    interrupts: <24 IRQ_TYPE_LEVEL_HIGH> parent plic0 (sg200x_base_riscv.dtsi:312-313)
+    interrupt_names: "isp" (sg200x_base_riscv.dtsi:314)
+    clocks: <&clk CV181X_CLK_SRC_VIP_SYS_0>, <_1>, <_2>, <_3>, <&clk CV181X_CLK_AXI_VIP>, <CV181X_CLK_CSI_BE_VIP>, <CV181X_CLK_RAW_VIP>, <CV181X_CLK_ISP_TOP_VIP>, <CV181X_CLK_CSI_MAC0_VIP>, <CV181X_CLK_CSI_MAC1_VIP>, <CV181X_CLK_CSI_MAC2_VIP> (sg200x_base.dtsi:705-710)
+    clock_names: "clk_sys_0", "clk_sys_1", "clk_sys_2", "clk_sys_3", "clk_axi", "clk_csi_be", "clk_raw", "clk_isp_top", "clk_csi_mac0", "clk_csi_mac1", "clk_csi_mac2" (sg200x_base.dtsi:711-713)
+    other_props: clock-freq-vip-sys1 = <300000000> (sg200x_base.dtsi:714)
+    osdrv_consumer: vi/common/vi_core.c:201-203 (MEM idx 0, devm_ioremap_resource), :211 platform_get_irq_byname("isp"), :159-180 devm_clk_get for arrays in vi/chip/cv181x/vi_interfaces.h:10-18 (all 11 mandatory, PTR_ERR fatal), of_match vi_core.c:323
+    mainline_mapping: clk_sys_0..3 -> CLK_SRC_VIP_SYS_0..3 = 100,101,102,103 (vendor 80,81,136,154); clk_axi -> CLK_AXI_VIP 99 (79); clk_csi_be -> CLK_CSI_BE_VIP 105 (147); clk_raw -> CLK_RAW_VIP 134 (157); clk_isp_top -> CLK_ISP_TOP_VIP 111 (95); clk_csi_mac0/1/2 -> 106/107/108 (93/94/159). IRQ 24 = SOC_PERIPHERAL_IRQ(8). isp_top reset: VIP_SYS only (no mainline id).
+    mismatches_with_probe_code: All 11 clock names and 'isp' irq match. clock-freq-vip-sys1 is present but vi has no of_property_read (Phase-1 vi-isp: grep 0) -> unused. Region 0x0a000000+0x80000 ends exactly at vpss 0x0a080000 (no overlap).
+  -
+    node: vpss
+    compatible: cvitek,vpss
+    reg: <0x0 0x0a080000 0x0 0x10000>, <0x0 0x0a0d1000 0x0 0x100> (sg200x_base.dtsi:719)
+    reg_names: "sc" (only ONE name for two regions, sg200x_base.dtsi:720)
+    interrupts: <25 IRQ_TYPE_LEVEL_HIGH> parent plic0 (sg200x_base_riscv.dtsi:356-358)
+    interrupt_names: "sc" (sg200x_base_riscv.dtsi:357)
+    clocks: <&clk CV181X_CLK_SRC_VIP_SYS_0>, <_1>, <_2>, <CV181X_CLK_IMG_D_VIP>, <CV181X_CLK_IMG_V_VIP>, <CV181X_CLK_SC_TOP_VIP>, <CV181X_CLK_SC_D_VIP>, <CV181X_CLK_SC_V1_VIP>, <CV181X_CLK_SC_V2_VIP>, <CV181X_CLK_SC_V3_VIP> (sg200x_base.dtsi:721-725)
+    clock_names: "clk_sys_0", "clk_sys_1", "clk_sys_2", "clk_img_d", "clk_img_v", "clk_sc_top", "clk_sc_d", "clk_sc_v1", "clk_sc_v2", "clk_sc_v3" (sg200x_base.dtsi:726-730)
+    other_props: clock-freq-vip-sys1 = <300000000> (sg200x_base.dtsi:731)
+    osdrv_consumer: vpss/chip/cv181x/vpss_core.c ~1422-1447 (2 MEM by index, devm_ioremap(res->end-res->start) off-by-one), ~1446 platform_get_irq_byname("sc"), ~1457-1470 devm_clk_get clk_sys_0/1/2 + clk_sc_top (optional), cvi_vip_img.c:19,273 clk_img_d/v, cvi_vip_sc.c:21,392 clk_sc_d/v1/v2/v3, device_property_read_u32 clock-freq-vip-sys1 (~1471), of_match vpss_core.c:1764
+    mainline_mapping: clk_sys_0/1/2 -> 100/101/102; clk_img_d -> CLK_IMG_D_VIP 112 (96); clk_img_v -> 113 (97); clk_sc_top -> CLK_SC_TOP_VIP 114 (98); clk_sc_d -> 115 (99); clk_sc_v1/v2/v3 -> 116/117/118 (100/101/102). IRQ 25 = SOC_PERIPHERAL_IRQ(9). sc_*/img_*/disp/dsi_mac resets: VIP_SYS only.
+    mismatches_with_probe_code: All 10 clock names, 'sc' irq and clock-freq-vip-sys1 match. reg-names has 1 entry for 2 regions (code ignores names). D-PHY region 0x100 covers dsi_phy.c offsets up to 0xC8 (verified). reg[0] 0x10000 covers SCL_TOP+DISP(0x8000)+BT(0x9000)+DSI(0xA000)+CMDQ(0xB000).
+  -
+    node: vo
+    compatible: cvitek,vo
+    reg: <0x0 0x0a080000 0x0 0x10000>, <0x0 0x0a0c8000 0x0 0xa0>, <0x0 0x0a0d1000 0x0 0x100> (sg200x_base.dtsi:742)
+    reg_names: "sc", "vip_sys", "dphy" (sg200x_base.dtsi:743)
+    interrupts: (none in riscv wrapper)
+    clocks: <&clk CV181X_CLK_DISP_VIP>, <&clk CV181X_CLK_DSI_MAC_VIP>, <&clk CV181X_CLK_BT_VIP> (sg200x_base.dtsi:744)
+    clock_names: "clk_disp", "clk_dsi", "clk_bt" (sg200x_base.dtsi:748)
+    other_props: reset-gpio = <&porte 2 GPIO_ACTIVE_LOW>; pwm-gpio = <&porte 0 GPIO_ACTIVE_HIGH>; power-ct-gpio = <&porte 1 GPIO_ACTIVE_HIGH> (sg200x_base.dtsi:745-747; Duo S dts:105-111 repeats them, commented 'mipi dsi for u-boot'; LicheeRV Nano dts:35-46 deletes them for Linux)
+    osdrv_consumer: vo/common/vo_core.c:127-137 devm_clk_get clk_disp/clk_bt/clk_dsi (optional, NULL on error); reg loop :160-172 is #if 0; irq byname :185 is #if 0 (gets 'sc' via vpss callback); of_match :353
+    mainline_mapping: clk_disp -> CLK_DISP_VIP 121 (vendor 105); clk_dsi -> CLK_DSI_MAC_VIP 122 (106); clk_bt -> CLK_BT_VIP 120 (104). disp/bt/dsi_mac resets: VIP_SYS only.
+    mismatches_with_probe_code: The 3 reg regions are DEAD (vo_core.c #if 0) and duplicate vpss reg[0]/reg[1] and base's VIP_SYS (declared here as 0xa0 vs 0x20 in base). GPIO props on vo are only consumed by u-boot; Linux reads them from mipi_tx. 'vo {' has no label in sg200x_base.dtsi:740 yet Duo S dts:105 uses &vo and LicheeRV Nano dts:35 uses &cvi_vo -> board files cannot compile against this base as-is (see findings).
+  -
+    node: mipi_tx
+    compatible: cvitek,mipi_tx
+    reg: (none)
+    clocks: <&clk CV181X_CLK_DISP_VIP>, <&clk CV181X_CLK_DSI_MAC_VIP> (sg200x_base.dtsi:688)
+    clock_names: "clk_disp", "clk_dsi" (sg200x_base.dtsi:689)
+    interrupts: (none)
+    other_props: reset-gpio = <&porte 2 GPIO_ACTIVE_LOW>; pwm-gpio = <&porte 0 GPIO_ACTIVE_HIGH>; power-ct-gpio = <&porte 1 GPIO_ACTIVE_HIGH> (sg200x_base.dtsi:685-687; Duo S dts:114-120 same + status okay; asic_qfn:9-13 porta 15/18/19; LicheeRV Nano dts:48-59 Linux: reset-gpio <&porte 0 1>, pwm-gpio <&porte 2 1>, power-ct-gpio deleted)
+    osdrv_consumer: vo/common/vo_mipi_tx.c:614 platform_get_irq(pdev,0) (VBAT, guarded at :777 'if irq_vbat > 0'), :617/:626 devm_clk_get clk_disp/clk_dsi (optional), :654-665 of_get_named_gpio_flags reset-gpio/pwm-gpio/power-ct-gpio
+    mainline_mapping: clk_disp -> CLK_DISP_VIP 121; clk_dsi -> CLK_DSI_MAC_VIP 122. DSI PHY reset RST_DSIPHY=68 exists in vendor header only (no mainline macro; raw index usable). GPIO props -> reset-gpios/enable-gpios under gpiod.
+    mismatches_with_probe_code: Consistent: no reg/irq expected; VBAT irq absent and tolerated. Note S00kmod:71 does NOT insmod soph_mipi_tx.ko by default (commented) — vo alone drives DSI.
+  -
+    node: cvifb
+    compatible: cvitek,fb
+    reg: <0x0 0x0a088000 0x0 0x1000> (sg200x_base.dtsi:766)
+    reg_names: "disp" (sg200x_base.dtsi:767)
+    other_props: memory-region = <&fb_reserved> (sg200x_base.dtsi:765); whole node under #if (CVIMMAP_FRAMEBUFFER_SIZE > 0) (:751-769); LicheeRV Nano dts:178-186 sets &fb_reserved/&cvi_fb status okay
+    osdrv_consumer: fb/cvifb.c:619-630 of_parse_phandle memory-region (mandatory, -EINVAL) + of_reserved_mem_lookup; reg[0] informational (Phase-1 vo-mipitx-fb: cvifb.c:625-630); of_match cvifb.c:832
+    mainline_mapping: No clocks/irqs. Replace by DRM fbdev emulation; reserved region -> CMA pool.
+    mismatches_with_probe_code: Consistent. Label mismatch: node is unlabeled 'cvifb' in base (:763) but LicheeRV Nano uses &cvi_fb (dts:183).
+  -
+    node: dwa
+    compatible: cvitek,dwa
+    reg: <0x0 0x0a0c0000 0x0 0x1000> (sg200x_base.dtsi:772)
+    reg_names: "dwa" (sg200x_base.dtsi:773)
+    interrupts: <28 IRQ_TYPE_LEVEL_HIGH> parent plic0 (sg200x_base_riscv.dtsi:362-364)
+    interrupt_names: "dwa" (sg200x_base_riscv.dtsi:363)
+    clocks: <&clk CV181X_CLK_SRC_VIP_SYS_0>, <_1>, <_2>, <_3>, <_4>, <&clk CV181X_CLK_DWA_VIP> (sg200x_base.dtsi:774-776)
+    clock_names: "clk_sys_0", "clk_sys_1", "clk_sys_2", "clk_sys_3", "clk_sys_4", "clk_dwa" (sg200x_base.dtsi:777-779)
+    other_props: clock-freq-vip-sys1 = <300000000> (sg200x_base.dtsi:780)
+    osdrv_consumer: dwa/common/dwa_platform.c:363 MEM idx 0, :381 platform_get_irq_byname("dwa"), :244-264 devm_clk_get clk_sys_0..4 + CLK_DWA_NAME; VIP_SYS CLK_CTRL1 via base :272; of_match :551
+    mainline_mapping: clk_sys_0..4 -> 100..104 (vendor 80,81,136,154,155); clk_dwa -> CLK_DWA_VIP 119 (103). IRQ 28 = SOC_PERIPHERAL_IRQ(12). ldc reset: VIP_SYS only.
+    mismatches_with_probe_code: Consistent (clock-freq-vip-sys1 consumption in dwa not verified this session).
+  -
+    node: ive
+    compatible: cvitek,ive
+    reg: <0x0 0x0A0A0000 0x0 0x3100> (sg200x_base.dtsi:736)
+    reg_names: "ive_base" (sg200x_base.dtsi:737)
+    interrupts: <97 IRQ_TYPE_LEVEL_HIGH> parent plic0 (sg200x_base_riscv.dtsi:350-352)
+    interrupt_names: "ive_irq" (sg200x_base_riscv.dtsi:350)
+    osdrv_consumer: ive/common/cvi_ive_interface.c:855-856 MEM idx 0 devm_ioremap_resource, :863 platform_get_irq(pdev,0); no clocks (uses VIP_SYS bits via base); of_match :954
+    mainline_mapping: No clocks in DT. ive reset bit in VIP_SYS only. IRQ 97 = SOC_PERIPHERAL_IRQ(81).
+    mismatches_with_probe_code: Consistent; reg-names/interrupt-names unused by code.
+  -
+    node: tpu
+    compatible: cvitek,tpu
+    reg: <0x0 0x0C100000 0x0 0x1000>, <0x0 0x0C101000 0x0 0x1000> (sg200x_base.dtsi:47-48)
+    reg_names: "tdma", "tiu" (sg200x_base.dtsi:46)
+    interrupts: <75 IRQ_TYPE_LEVEL_HIGH>, <76 IRQ_TYPE_LEVEL_HIGH> parent plic0 (sg200x_base_riscv.dtsi:100-103)
+    interrupt_names: "tiu_irq", "tdma_irq" (sg200x_base_riscv.dtsi:102)
+    clocks: <&clk CV181X_CLK_TPU>, <&clk CV181X_CLK_TPU_FAB> (sg200x_base.dtsi:49)
+    clock_names: "clk_tpu_axi", "clk_tpu_fab" (sg200x_base.dtsi:50)
+    resets: <&rst RST_TDMA>, <&rst RST_TPU>, <&rst RST_TPUSYS> (sg200x_base.dtsi:51)
+    reset_names: "res_tdma", "res_tpu", "res_tpusys" (sg200x_base.dtsi:52)
+    osdrv_consumer: tpu/common/cvi_tpu_interface.c:1160/1167 platform_get_resource_byname tdma/tiu, :1174 platform_get_irq(pdev,1) (=tdma_irq 76), :1186/1192 devm_clk_get clk_tpu_axi/clk_tpu_fab, :1199-1209 devm_reset_control_get res_tdma/res_tpu/res_tpusys; of_match :1309
+    mainline_mapping: clk_tpu_axi -> CLK_TPU 11 (vendor 15); clk_tpu_fab -> CLK_TPU_FAB 12 (16); RST_TDMA 7, RST_TPU 8, RST_TPUSYS 9 identical in both headers. Armbian patch 0064 already carries a mainline TPU node (per DIGEST).
+    mismatches_with_probe_code: Consistent.
+  -
+    node: vcodec
+    compatible: cvitek,asic-vcodec
+    reg: <0x0 0x0B020000 0x0 0x10000>, <0x0 0x0B010000 0x0 0x10000>, <0x0 0x0B030000 0x0 0x100>, <0x0 0x0B058000 0x0 0x100>, <0x0 0x0B050000 0x0 0x400> (sg200x_base.dtsi:789-790)
+    reg_names: "h265", "h264", "vc_ctrl", "vc_sbm", "vc_addr_remap" (sg200x_base.dtsi:791)
+    interrupts: <22>, <21>, <23> IRQ_TYPE_LEVEL_HIGH parent plic0 (sg200x_base_riscv.dtsi:318-322)
+    interrupt_names: "h265", "h264", "sbm" (sg200x_base_riscv.dtsi:321)
+    clocks: <&clk CV181X_CLK_AXI_VIDEO_CODEC>, <CV181X_CLK_H264C>, <CV181X_CLK_APB_H264C>, <CV181X_CLK_H265C>, <CV181X_CLK_APB_H265C>, <CV181X_CLK_VC_SRC0>, <CV181X_CLK_VC_SRC1>, <CV181X_CLK_VC_SRC2>, <CV181X_CLK_CFG_REG_VC> (sg200x_base.dtsi:792-796)
+    clock_names: "clk_axi_video_codec", "clk_h264c", "clk_apb_h264c", "clk_h265c", "clk_apb_h265c", "clk_vc_src0", "clk_vc_src1", "clk_vc_src2", "clk_cfg_reg_vc" (sg200x_base.dtsi:797-801)
+    osdrv_consumer: vcodec/cvi_vcodec.c:1318 MEM idx 0/1 (h265/h264), :1337 idx 2, :1357 byname vc_addr_remap, :1378 byname vc_sbm, :1437/:1455 platform_get_irq_byname h265/h264/sbm (:1426), clocks vcodec_common.c:25-35; memory-region code :1519-1527 compiled out by -DCVI_H26X_USE_ION_FW_BUFFER (vcodec/Makefile:7)
+    mainline_mapping: clk_axi_video_codec -> 137 (vendor 83); clk_h264c -> 141 (85); clk_apb_h264c -> 142 (89); clk_h265c -> 143 (86); clk_apb_h265c -> 144 (90); clk_vc_src0/1/2 -> 138/139/140 (84/135/142); clk_cfg_reg_vc -> 154 (139). No resets in DTS; mainline has RST_H264C 3, RST_H265C 5, RST_VCSYS 95.
+    mismatches_with_probe_code: Consistent. No memory-region in DTS is fine because the reserved-video-memory path is compiled out; firmware/bitstream come from ION via sys.ko.
+  -
+    node: jpu
+    compatible: cvitek,asic-jpeg
+    reg: <0x0 0x0B000000 0x0 0x300>, <0x0 0x0B030000 0x0 0x100>, <0x0 0x0B058000 0x0 0x100> (sg200x_base.dtsi:806)
+    reg_names: "jpeg", "vc_ctrl", "vc_sbm" (sg200x_base.dtsi:807)
+    interrupts: <20 IRQ_TYPE_LEVEL_HIGH> parent plic0 (sg200x_base_riscv.dtsi:326-328)
+    interrupt_names: "jpeg" (sg200x_base_riscv.dtsi:327)
+    clocks: <&clk CV181X_CLK_AXI_VIDEO_CODEC>, <CV181X_CLK_JPEG>, <CV181X_CLK_APB_JPEG>, <CV181X_CLK_VC_SRC0>, <CV181X_CLK_VC_SRC1>, <CV181X_CLK_VC_SRC2>, <CV181X_CLK_CFG_REG_VC> (sg200x_base.dtsi:808-811)
+    clock_names: "clk_axi_video_codec", "clk_jpeg", "clk_apb_jpeg", "clk_vc_src0", "clk_vc_src1", "clk_vc_src2", "clk_cfg_reg_vc" (sg200x_base.dtsi:812-815)
+    resets: <&rst RST_JPEG> (sg200x_base.dtsi:816)
+    reset_names: "jpeg" (sg200x_base.dtsi:817)
+    osdrv_consumer: jpeg/cvi_jpeg.c:370/393 MEM idx 0/1, :445 platform_get_resource(IORESOURCE_IRQ,0), memory-region :537-549 compiled out by USE_VMALLOC_FOR_INSTANCE_POOL_MEMORY (cvi_jpeg.h:22)
+    mainline_mapping: clk_jpeg -> CLK_JPEG 145 (vendor 87); clk_apb_jpeg -> 146 (88); others as vcodec. RST_JPEG 4 identical in both headers.
+    mismatches_with_probe_code: Consistent for 5.10. Note: IRQ fetched via platform_get_resource(IORESOURCE_IRQ) (cvi_jpeg.c:445) — deprecated API; whether mainline 7.3 still populates IRQ resources for OF platform devices was not verified (use platform_get_irq).
+  -
+    node: cvi_vc_drv
+    compatible: cvitek,cvi_vc_drv
+    reg: <0x0 0x0B030000 0x0 0x100>, <0x0 0x0B058000 0x0 0x100>, <0x0 0x0B050000 0x0 0x400> (sg200x_base.dtsi:822)
+    reg_names: "vc_ctrl", "vc_sbm", "vc_addr_remap" (sg200x_base.dtsi:823)
+    osdrv_consumer: cvi_vc_drv/cvi_vc_drv.c:1451/1469/1487 platform_get_resource_byname vc_ctrl/vc_sbm/vc_addr_remap
+    mainline_mapping: No clocks/irqs. Regions duplicate vcodec/jpu reg entries (shared VC control block).
+    mismatches_with_probe_code: Consistent.
+  -
+    node: rtos_cmdqu
+    compatible: cvitek,rtos_cmdqu
+    reg: <0x0 0x01900000 0x0 0x1000> (sg200x_base.dtsi:828)
+    reg_names: "mailbox" (sg200x_base.dtsi:829)
+    interrupts: <101 IRQ_TYPE_LEVEL_HIGH> parent plic0 (sg200x_base_riscv.dtsi:332-334)
+    interrupt_names: "mailbox" (sg200x_base_riscv.dtsi:333)
+    osdrv_consumer: rtos_cmdqu/rtos_cmdqu.c:549-564 MEM idx 0 devm_ioremap, :581 platform_get_irq_byname("mailbox"); of_match :630
+    mainline_mapping: Mainline cv1800-mailbox (6.16) covers the same block per DIGEST; rproc region fast_image reserved-memory (memmap:13-16).
+    mismatches_with_probe_code: Consistent. rtos_image node requested in task does not exist in these DTS files; the equivalent is reserved-memory 'fast_image: rproc'.
+  -
+    node: cvitek-ion / heap_carveout@0
+    compatible: cvitek,cvitek-ion ; child cvitek,carveout
+    reg: (none)
+    other_props: heap_carveout@0 { memory-region = <&ion_reserved>; } (sg200x_base.dtsi:112-119), whole node under #if (CVIMMAP_ION_SIZE > 0)
+    osdrv_consumer: Vendor kernel drivers/staging/android/ion/cvitek/cvitek_ion.c:507 (cvitek,cvitek-ion), :67-68 (cvitek,carveout), RESERVEDMEM_OF_DECLARE 'ion-region' :568 (rmem_ion_setup -> heap base/size :535-544); osdrv sys.c allocates ION_HEAP_TYPE_CARVEOUT (Phase-1 sys.c:57,126)
+    mainline_mapping: ION removed. Replace with reserved-memory 'shared-dma-pool' + 'reusable' -> /dev/dma_heap/<name> (CMA heap) and a kernel-side memory-region on the sys node.
+    mismatches_with_probe_code: Consistent with vendor kernel.
+  -
+    node: mon
+    compatible: cvitek,mon
+    reg: <0x0 0x01040000 0x0 0x1000>, <0x0 0x08004000 0x0 0x1000>, <0x0 0x08006000 0x0 0x1000>, <0x0 0x08008000 0x0 0x1000>, <0x0 0x0800A000 0x0 0x1000> (sg200x_base.dtsi:58-62)
+    reg_names: "pcmon", "ddr_ctrl", "ddr_phyd", "ddr_aximon", "ddr_top" (sg200x_base.dtsi:57)
+    interrupts: <93 IRQ_TYPE_LEVEL_HIGH> parent plic0 (sg200x_base_riscv.dtsi:107-109)
+    interrupt_names: "mon_irq" (sg200x_base_riscv.dtsi:108)
+    osdrv_consumer: mon/common/cvi_mon_interface.c:471-499 byname x5, :506 platform_get_irq(pdev,0); of_match :575
+    mainline_mapping: No clocks. Debug-only module (drop per DIGEST).
+    mismatches_with_probe_code: Consistent.
+  -
+    node: wiegand0/1/2
+    compatible: cvitek,wiegand
+    reg: <0x0 0x03030000 0x0 0x1000> / 0x03031000 / 0x03032000 (sg200x_base.dtsi:68,78,88)
+    reg_names: "wiegand"
+    interrupts: <64>/<65>/<66> IRQ_TYPE_LEVEL_HIGH parent plic0 (sg200x_base_riscv.dtsi:113,118,123)
+    clocks: <&clk CV181X_CLK_WGN>, <&clk CV181X_CLK_WGN0|1|2> (sg200x_base.dtsi:69,79,89)
+    clock_names: "clk_wgn", "clk_wgn1"
+    resets: <&rst RST_WGN0|1|2> (sg200x_base.dtsi:71,81,91)
+    reset_names: "res_wgn"
+    osdrv_consumer: wiegand/cvi_wiegand.c:416 byname wiegand, :426 irq 0, :437/443 clk_wgn/clk_wgn1, :449 res_wgn; of_match :481
+    mainline_mapping: clk_wgn -> CLK_WGN 149 (vendor 129); clk_wgn0/1/2 -> 150/151/152 (130/131/132); RST_WGN0/1/2 86/87/88 identical.
+    mismatches_with_probe_code: Consistent.
+  -
+    node: saradc
+    compatible: cvitek,saradc
+    reg: <0x0 0x030F0000 0x0 0x1000>, <0x0 0x0502c000 0x0 0x1000> (sg200x_base.dtsi:98)
+    reg_names: "top_domain_saradc", "rtc_domain_saradc" (sg200x_base.dtsi:97)
+    interrupts: <100 IRQ_TYPE_EDGE_RISING> parent plic0 (sg200x_base_riscv.dtsi:128-129)
+    clocks: <&clk CV181X_CLK_SARADC> (sg200x_base.dtsi:99)
+    clock_names: "clk_saradc"
+    resets: <&rst RST_SARADC> (sg200x_base.dtsi:101)
+    reset_names: "res_saradc"
+    osdrv_consumer: saradc/cv181x/cvi_saradc.c:414/424 byname, :434 irq 0, :445 clk_saradc, :453 res_saradc; of_match :495
+    mainline_mapping: clk_saradc -> CLK_SARADC 18 (vendor 21); RST_SARADC 52 identical. Mainline cv180x.dtsi:163 has sophgo,cv1800b-saradc at 0x030f0000 -> drop osdrv module.
+    mismatches_with_probe_code: Consistent.
+  -
+    node: rtc
+    compatible: cvitek,rtc
+    reg: <0x0 0x05026000 0x0 0x1000>, <0x0 0x05025000 0x0 0x1000> (sg200x_base.dtsi:107)
+    interrupts: <17 IRQ_TYPE_LEVEL_HIGH> parent plic0 (sg200x_base_riscv.dtsi:133-134)
+    clocks: <&clk CV181X_CLK_RTC_25M> (sg200x_base.dtsi:108)
+    clock_names: "clk_rtc"
+    osdrv_consumer: rtc/cv181x/cvi_rtc.c:384/389 MEM idx 0/1, :394 irq 0, :398 devm_clk_get(NULL); of_match :250
+    mainline_mapping: clk_rtc -> CLK_RTC_25M 15 (vendor 19). Mainline rtc-cv1800 exists (DIGEST) -> drop module.
+    mismatches_with_probe_code: Consistent.
+  -
+    node: watchdog0 (cv-wd@0x3010000)
+    compatible: snps,dw-wdt
+    reg: <0x0 0x03010000 0x0 0x1000> (sg200x_base.dtsi:150)
+    interrupts: <58 IRQ_TYPE_LEVEL_HIGH> (sg200x_base_riscv.dtsi:147; NO interrupt-parent set here, inherits root)
+    clocks: <&pclk> fixed 25 MHz (sg200x_base.dtsi:152,183-187)
+    resets: <&rst RST_WDT> (sg200x_base.dtsi:151)
+    osdrv_consumer: wdt/cv181x/cvi_wdt.c:315 MEM 0, :320 clk NULL, :334 optional shared reset; of_match :395 'snps,dw-wdt' (same compatible as mainline dw_wdt -> double binding if both built; S00kmod:74 leaves soph_wdt commented)
+    mainline_mapping: RST_WDT 48 identical. Use mainline dw_wdt.
+    mismatches_with_probe_code: Consistent; interrupt-parent missing on this node in the riscv wrapper (others set plic0).
+  -
+    node: pwm0..3
+    compatible: cvitek,cvi-pwm
+    reg: <0x0 0x3060000|0x3061000|0x3062000|0x3063000 0x0 0x1000> (sg200x_base.dtsi:157,164,171,178)
+    clocks: <&clk CV181X_CLK_PWM>
+    other_props: #pwm-cells = <1>/<2>/<3>/<4> respectively (sg200x_base.dtsi:159,166,173,180) — inconsistent cell counts across instances
+    osdrv_consumer: pwm/cv181x/cvi_pwm.c:295 MEM 0, :300 devm_clk_get(NULL), :313-319 optional pwm-num / no-polarity; of_match :272
+    mainline_mapping: CLK_PWM 60 (vendor 51). Mainline pwm-sophgo-sg2042 register-compatible per DIGEST (Armbian patch).
+    mismatches_with_probe_code: Consistent with code; #pwm-cells 1..4 is a DTS oddity (LicheeRV Nano comment dts:258 'buggy pwm driver').
+  -
+    node: cooling
+    compatible: sophgo,cooling (sg200x_base_riscv.dtsi:95; cv181x variant uses cvitek,cv181x-cooling)
+    reg: (none)
+    clocks: <&clk CV181X_CLK_C906_0>, <&clk CV181X_CLK_TPU> (sg200x_base_riscv.dtsi:90)
+    clock_names: "clk_cpu", "clk_tpu_axi"
+    other_props: dev-freqs = <850000000 500000000>, <425000000 375000000>, <425000000 300000000>; #cooling-cells = <2> (sg200x_base_riscv.dtsi:92-96); boards map trips in cooling-maps (duos dts:140-151)
+    osdrv_consumer: clock_cooling/cv181x/clock_cooling.c:149/155 clk_cpu/clk_tpu_axi, :180-182 dev-freqs; of_match :260 = 'cvitek,cv181x-cooling' ONLY
+    mainline_mapping: clk_cpu -> CLK_C906_0 155 (vendor 152); clk_tpu_axi -> CLK_TPU 11. Replace with cpufreq/devfreq cooling.
+    mismatches_with_probe_code: MISMATCH: sg200x DTS compatible 'sophgo,cooling' is not matched by the osdrv snapshot (only cvitek,cv181x-cooling) -> module would never probe (it is not loaded anyway, S00kmod:75 commented). Newer osdrv may have added the string (unverified).
+  -
+    node: clk / rst / clk_rst / top_misc (providers)
+    compatible: cvitek,cv181x-clk (0x03002000/0x1000, #clock-cells 1, clocks <&osc> 25 MHz) ; cvitek,reset (0x03003000/0x10, #reset-cells 1) ; cvitek,clk-reset (0x03002000/0x8) ; syscon top_misc 0x03000000/0x8000
+    reg: sg200x_base.dtsi:8-37
+    osdrv_consumer: Vendor kernel clk/reset drivers (not osdrv).
+    mainline_mapping: clk -> sophgo,sg2000-clk @3002000 (sg2000.dtsi:30-35); rst -> sophgo,cv1800b-reset @3003000 size 0x1000 (cv180x.dtsi:54-57); top_misc -> sophgo,cv1800b-top-syscon @3000000 (cv180x.dtsi:28-31). Clock IDs differ (translate by name, table in nodes above); reset indices are IDENTICAL for every id used by the DTS (3,4,5,6,7,8,9,27-31,48,52,86-88,95 checked in both headers).
+    mismatches_with_probe_code: n/a
+reserved_memory:
+  -
+    name: memory@80000000 (not reserved; system RAM)
+    base_size: reg = <0 CVIMMAP_KERNEL_MEMORY_ADDR 0 CVIMMAP_KERNEL_MEMORY_SIZE> = Duo S 0x80000000 + 0x1FE00000 (510 MiB); LicheeRV Nano 0x80000000 + 0x0FE00000 (254 MiB)
+    compatible: device_type memory
+    used_by: sg200x_default_memmap.dtsi:2-5; values from memmap.py:37-38 (DRAM_SIZE - FREERTOS_SIZE)
+  -
+    name: /memreserve/ OpenSBI
+    base_size: CVIMMAP_MONITOR_ADDR 0x80000000, CVIMMAP_OPENSBI_SIZE 0x80000 (512 KiB)
+    used_by: sg200x_base_riscv.dtsi:19; memmap.py:27,30
+  -
+    name: fast_image: rproc
+    base_size: reg = <0 CVIMMAP_FREERTOS_ADDR 0 CVIMMAP_FREERTOS_SIZE> = Duo S 0x9FE00000 + 0x200000; LicheeRV Nano 0x8FE00000 + 0x200000 (2 MiB, top of DRAM); no-map
+    compatible: (none)
+    used_by: C906L FreeRTOS firmware / rtos_cmdqu + fast_image (sg200x_default_memmap.dtsi:13-16; memmap.py:18-21). Lies outside memory@ node anyway.
+  -
+    name: vdev0vring0
+    base_size: alloc-ranges <0 0x8f528000 0 0x4000>, size 0x4000, no-map
+    compatible: shared-dma-pool
+    used_by: remoteproc virtio vring (sg200x_default_memmap.dtsi:18-23). Hard-coded address independent of DRAM size.
+  -
+    name: vdev0vring1
+    base_size: alloc-ranges <0 0x8f52C000 0 0x4000>, size 0x4000, no-map
+    compatible: shared-dma-pool
+    used_by: sg200x_default_memmap.dtsi:25-30
+  -
+    name: vdev0buffer
+    base_size: alloc-ranges <0 0x8f530000 0 0x100000>, size 0x100000 (1 MiB), no-map
+    compatible: shared-dma-pool
+    used_by: sg200x_default_memmap.dtsi:32-37
+  -
+    name: ion_reserved: ion
+    base_size: size = <0 CVIMMAP_ION_SIZE> ONLY (no reg/alloc-ranges -> Linux places it dynamically): Duo S 74 MiB = 0x4A00000 (settings.mk ION_SIZE=74, memmap.py:43); LicheeRV Nano 63 MiB = 0x3F00000 (35 MiB for kvm variant, settings.mk:9-13). Bootloader/FreeRTOS view per memmap.py:50: ION_ADDR = FREERTOS_ADDR - ION_SIZE = 0x9B400000 (Duo S) / 0x8BF00000 (Nano), containing H26X bitstream 2 MiB + ISP_MEM 20 MiB for the RTOS fast-boot path (memmap.py:44-57)
+    compatible: ion-region
+    used_by: cvitek-ion heap_carveout@0 memory-region (sg200x_base.dtsi:117) -> all osdrv VB pools/ION buffers; vendor cvitek_ion.c:568 RESERVEDMEM_OF_DECLARE. Under #if (CVIMMAP_ION_SIZE > 0) (memmap.dtsi:38-43).
+  -
+    name: fb_reserved: cvifb
+    base_size: alloc-ranges <0 CVIMMAP_FRAMEBUFFER_ADDR 0 CVIMMAP_FRAMEBUFFER_SIZE>, size CVIMMAP_FRAMEBUFFER_SIZE = 5632 KiB = 0x580000; FB_ADDR = ION_ADDR - 0x580000 = 0x9AE80000 (Duo S) / 0x8B980000 (Nano) per memmap.py:61-64 (boot-logo buffer reused)
+    compatible: (none; dynamic within alloc-ranges)
+    used_by: cvifb memory-region (sg200x_base.dtsi:757-765); under #if (CVIMMAP_FRAMEBUFFER_SIZE > 0)
+board_level_display_camera_wiring: INCLUDE CHAIN (both boards): board.dts -> \"soph_base_riscv.dtsi\" + \"soph_asic_{bga|qfn}.dtsi\" + \"soph_asic_{sd|emmc}.dtsi\" + \"soph_default_memmap.dtsi\" (duos_sd.dts:2-5, licheervnano_sd.dts:2-5). The repo only ships sg200x_*/cv181x_* names (copy_dts_action copies configs/common/dts/$(CHIP)/* into the kernel dts dir; the kernel is cloned from branch sg200x-5.10.y / licheervnano-merged-5.10.y, build script lines 95-100,296,306). sg200x_base.dtsi and cv181x_base.dtsi are byte-identical (diff empty); riscv wrappers differ only in model string, cooling compatible/label and #interrupt-cells on GPIO ports. CVIMMAP_* come from cvi_board_memmap.h generated from memmap.py (build lines 270-271,307-308). UNRESOLVED LABELS: Duo S uses &vo (dts:105) and Nano uses &cvi_vo (dts:35) / &cvi_fb (dts:183), but sg200x_base.dtsi has unlabeled 'vo {' (:740) and 'cvifb {' (:763); no file in the ext tree defines cvi_vo:/cvi_fb: (grep). So the real soph_base_riscv.dtsi in the kernel branch must differ slightly from this repo copy (likely = labels added) -> treat this contract as 'verified from the repo copy, exact production base unverified'.
+
+DISPLAY — Duo S (BGA, duos_sd.dts): MIPI DSI via vo/mipi_tx; GPIOs reset-gpio <&porte 2 GPIO_ACTIVE_LOW>, pwm-gpio (backlight enable) <&porte 0 GPIO_ACTIVE_HIGH>, power-ct-gpio <&porte 1 GPIO_ACTIVE_HIGH> on both &vo (u-boot, dts:104-111) and &mipi_tx (kernel, dts:113-120); panel timing is NOT in DT — selected by userspace/u-boot tuning (settings.mk PANEL_TUNING_DEFAULT=MIPI_panel_milkv_8hd, extras milkv_8hd_2lane, st7796s). Touch: &i2c4 gt9xx@14 goodix, irq <&porta 18>, rst <&porta 19> (dts:66-72). Secondary SPI LCD: &spi3 st7789v (sitronix,st7789x) 48 MHz, dc <&porta 18>, reset <&porta 28> (dts:80-96). I2C: i2c0 disabled, i2c1/2/3/4 okay (dts:47-64); no sensor child nodes on any I2C bus (sensors are userspace libsns_*). DISPLAY — LicheeRV Nano (QFN, licheervnano_sd.dts): asic_qfn sets mipi_tx GPIOs porta 15/18/19 (qfn:9-13) but the board overrides for Linux: &mipi_tx reset-gpio <&porte 0 1>, pwm-gpio <&porte 2 1>, power-ct-gpio deleted (dts:48-59); &cvi_vo deletes all three for Linux (dts:35-46); panel default MIPI_panel_zct2133v1, extras incl. LT9611 DSI->HDMI 1024x768/1280x720 and several st7701 (settings.mk:14-15). cvifb enabled (dts:178-186). Touch on &i2c4: gt9xx@14 (irq porte 3, rst porte 4) and hynitron@5a (display-coords 480x640) (dts:112-137). SPI LCD st7789 on &spi2, dc <&porte 20>, reset <&porte 19 LOW> (dts:152-166). Backlight pwm-backlight on pwm2 commented out as 'buggy pwm driver' (dts:258-267). PINMUX: no pinctrl nodes at all — the vendor pinctrl node is '#if 0' (sg200x_base.dtsi:888-893); QFN i2c nodes carry raw FMUX register/value triples (scl-pinmux/sda-pinmux, e.g. i2c2 SCL on PAD_MIPI_TXP1 0x030011a0 func 4, SDA on PAD_MIPI_TXM1 0x0300119c — i.e. the second DSI lane pair is muxed to I2C2 on QFN, asic_qfn:77-84); Nano deletes those props on i2c0/1/2/3 (dts:11-25,96-110). Pinmux for DSI/CSI is otherwise done by u-boot and by osdrv raw FMUX writes (DIGEST). CAMERA — Duo S: &mipi_rx snsr-reset = <&porta 2 GPIO_ACTIVE_LOW> x3 (dts:43-45). Nano: snsr-reset = <&porte 1 GPIO_ACTIVE_LOW> (single entry, dts:188-190). CSI lane/PHY topology, sensor I2C bus and sensor type are not in DT (configured by ioctl from middleware, sensor-config addon in settings.mk). LEDs/keys: Duo S leds porta 29 (blue), porte 6, porte 8 (dts:20-40); Nano led porta 14, user key porta 30, gpio-spi4 porta 22-25, gpio-i2c5 porta 15/27 (dts:214-256). Mainline Duo S dts (sg2000-milkv-duo-s.dts) has pinctrl states for uart/i2c4/mmc only; no DSI/CSI pins defined yet.
+memory_map_summary: Duo S (configs/duos/memmap.py, settings.mk ION_SIZE=74): DRAM 0x80000000 size 512 MiB. OpenSBI /memreserve/ 0x80000000+512 KiB (riscv.dtsi:19). u-boot text 0x80200000; uImage load 0x81800000 (16 MiB). Linux memory@80000000 = 0x80000000 size 0x1FE00000 (510 MiB) = DRAM minus FreeRTOS. FreeRTOS (C906L) 2 MiB at 0x9FE00000 (top), reserved as 'rproc' no-map. ION carveout 74 MiB (0x4A00000): DTS gives only 'size' so Linux places it dynamically (sg200x_default_memmap.dtsi:39-42); bootloader/RTOS assume it at 0x9B400000 with H26X bitstream 2 MiB @0x9B400000 and ISP_MEM 20 MiB @0x9B600000 (memmap.py:43-57) — the Linux-side base may differ (unverified, flagged). Framebuffer/boot-logo 5632 KiB at 0x9AE80000 (alloc-ranges-pinned). remoteproc vrings/buffer fixed at 0x8F528000-0x8F630000 (1 MiB+32 KiB, no-map) regardless of DRAM size. Kernel-usable approx 510 - 74 - 5.5 - 1.03 = ~429 MiB. LicheeRV Nano (configs/licheervnano/memmap.py, ION_SIZE=63, kvm variant 35): DRAM 256 MiB; memory@ size 0x0FE00000 (254 MiB); FreeRTOS 0x8FE00000; ION 63 MiB (bootloader view 0x8BF00000); FB 0x8B980000; vdev regions 0x8F528000.. sit just under FreeRTOS. Kernel-usable approx 254 - 63 - 5.5 - 1.03 = ~184 MiB. Mainline today: sg2000.dtsi:14-17 memory 512 MiB, sg2002.dtsi:17-19 256 MiB, no reserved-memory and no FreeRTOS hole (Armbian adds a 128 MiB CMA pool per DIGEST). cv181x_default_memmap.dtsi is identical to the sg200x one except whitespace (diff).
+proposed_mainline_dtsi_sketch: // sg2000-vip.dtsi — SKETCH. Addresses/sizes/IRQs/clock names are taken from the vendor DTS
+// (sg200x_base.dtsi / sg200x_base_riscv.dtsi) and translated to mainline ids by NAME.
+// Lines marked [GUESS] are not backed by any existing binding or driver.
+// Mainline numbering: vendor PLIC hwirq N == SOC_PERIPHERAL_IRQ(N-16) (sg2000.dtsi:3).
+// Two usage modes: (A) forward-port keeps 'cvitek,*' compatibles (strings in comments);
+// (B) DRM/V4L2 port uses the 'sophgo,*' strings [GUESS — no such bindings exist yet].
+
+#include <dt-bindings/clock/sophgo,cv1800.h>
+#include \"cv18xx-reset.h\"
+
+/ {
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* C906L FreeRTOS firmware — top 2 MiB of DRAM (memmap.py:18-21). Also shrink memory@80000000 by 2 MiB
+		 * (vendor: 0x1FE00000) if the RTOS is used; omit entirely if not. */
+		rtos_fw: rproc@9fe00000 {			/* sg2002/256 MiB boards: 0x8fe00000 */
+			reg = <0x9fe00000 0x200000>;
+			no-map;
+		};
+		vdev0vring0: vdev0vring0@8f528000 { compatible = \"shared-dma-pool\"; reg = <0x8f528000 0x4000>;  no-map; };
+		vdev0vring1: vdev0vring1@8f52c000 { compatible = \"shared-dma-pool\"; reg = <0x8f52c000 0x4000>;  no-map; };
+		vdev0buffer: vdev0buffer@8f530000 { compatible = \"shared-dma-pool\"; reg = <0x8f530000 0x100000>; no-map; };
+
+		/* Replacement for the vendor ION carveout (74 MiB on Duo S, 63 MiB on LicheeRV Nano).
+		 * 'reusable' makes it CMA: kernel allocs via dma_alloc_* on consumers that reference it,
+		 * and the CMA dma-heap exposes /dev/dma_heap/vip_cma to userspace (replaces /dev/ion). */
+		vip_cma: vip-pool {
+			compatible = \"shared-dma-pool\";
+			reusable;
+			size = <0x4a00000>;			/* 74 MiB = vendor ION_SIZE (Duo S); 0x3f00000 for Nano */
+			alignment = <0x400000>;			/* [GUESS] */
+			alloc-ranges = <0x80000000 0x20000000>;
+			linux,cma-default;			/* [GUESS] only if no other CMA pool (Armbian adds 128 MiB) */
+		};
+
+		/* Framebuffer / boot-logo handoff (vendor 5632 KiB pinned below ION, memmap.py:61-64).
+		 * Optional; only for simple-framebuffer/DRM boot-splash takeover. */
+		fb_reserved: framebuffer@9ae80000 {
+			reg = <0x9ae80000 0x580000>;
+			no-map;				/* [GUESS] */
+		};
+	};
+
+	soc {
+		/* VIP_SYS: top-level control block of the VIP domain. Vendor 'cvitek,base' reg 0x0a0c8000/0x20;
+		 * real register use extends to 0xe0 (reg_vip_sys.h), so 0x100. Provides per-IP soft resets
+		 * (VIP_RESETS @0x0, RESETS1 @0xc0 — bit map in base/chip/cv181x/vip_common.h:26-61) and
+		 * clock gates/dividers (CLK_LP 0x14, CLK_CTRL0 0x18, CLK_CTRL1 0x1c, CLK_RATIO 0x30-0x48).
+		 * No mainline driver exists for any of this. */
+		vip_syscon: syscon@a0c8000 {
+			compatible = \"sophgo,sg2000-vip-syscon\", \"syscon\", \"simple-mfd\";	/* [GUESS] */
+			reg = <0x0a0c8000 0x100>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0 0x0a0c8000 0x100>;
+
+			vip_rst: reset-controller@0 {
+				compatible = \"sophgo,sg2000-vip-reset\";	/* [GUESS] reset-simple over 0x0 (and 0xc0) */
+				reg = <0x0 0x4>;
+				#reset-cells = <1>;
+			};
+			vip_clk: clock-controller@14 {
+				compatible = \"sophgo,sg2000-vip-clk\";		/* [GUESS] gates + CSI-MAC/ISP dividers */
+				reg = <0x14 0x38>;
+				#clock-cells = <1>;
+			};
+		};
+
+		/* ISP (vendor 'cvitek,vi'): one 512 KiB window, one IRQ 'isp' (hwirq 24). */
+		isp: isp@a000000 {
+			compatible = \"sophgo,sg2000-isp\";		/* forward-port: \"cvitek,vi\" */
+			reg = <0x0a000000 0x80000>;
+			interrupts = <SOC_PERIPHERAL_IRQ(8) IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = \"isp\";
+			clocks = <&clk CLK_SRC_VIP_SYS_0>, <&clk CLK_SRC_VIP_SYS_1>,
+				 <&clk CLK_SRC_VIP_SYS_2>, <&clk CLK_SRC_VIP_SYS_3>,
+				 <&clk CLK_AXI_VIP>, <&clk CLK_CSI_BE_VIP>,
+				 <&clk CLK_RAW_VIP>, <&clk CLK_ISP_TOP_VIP>,
+				 <&clk CLK_CSI_MAC0_VIP>, <&clk CLK_CSI_MAC1_VIP>, <&clk CLK_CSI_MAC2_VIP>;
+			clock-names = \"clk_sys_0\", \"clk_sys_1\", \"clk_sys_2\", \"clk_sys_3\",
+				      \"clk_axi\", \"clk_csi_be\", \"clk_raw\", \"clk_isp_top\",
+				      \"clk_csi_mac0\", \"clk_csi_mac1\", \"clk_csi_mac2\";
+			resets = <&vip_rst 0 /* isp_top [GUESS idx] */>, <&vip_rst 1 /* csi_be [GUESS idx] */>;	/* [GUESS] */
+			reset-names = \"isp_top\", \"csi_be\";
+			memory-region = <&vip_cma>;
+			assigned-clocks = <&clk CLK_SRC_VIP_SYS_1>;	/* vendor clock-freq-vip-sys1 = 300 MHz */
+			assigned-clock-rates = <300000000>;
+			status = \"disabled\";
+		};
+
+		/* MIPI CSI-2 receivers (vendor 'cvitek,cif'): MAC0 @a0c2000, MAC1 @a0c4000, MAC2 @a0c6000,
+		 * shared CSI wrap/D-PHY @a0d0000, IRQs 26/27 (error counters only). Vendor pad_ctrl entry
+		 * 0x03001c30/0x30 lives inside the pinctrl block and is never used (cif.c:2820-2846) -> dropped. */
+		csi_phy: phy@a0d0000 {
+			compatible = \"sophgo,sg2000-mipi-csi-dphy\";	/* [GUESS] */
+			reg = <0x0a0d0000 0x1000>;
+			clocks = <&clk CLK_CAM0>, <&clk CLK_CAM1>, <&clk CLK_SRC_VIP_SYS_2>,
+				 <&clk CLK_MIPIMPLL>, <&clk CLK_DISPPLL>, <&clk CLK_FPLL>;
+			clock-names = \"clk_cam0\", \"clk_cam1\", \"clk_sys_2\", \"clk_mipimpll\", \"clk_disppll\", \"clk_fpll\";
+			resets = <&rst 70>, <&rst 71>, <&rst 72>, <&rst 73>;	/* CSIPHY0, CSIPHY0_APB, CSIPHY1, CSIPHY1_APB: no macros in cv18xx-reset.h */
+			reset-names = \"phy0\", \"phy-apb0\", \"phy1\", \"phy-apb1\";
+			#phy-cells = <1>;
+			status = \"disabled\";
+		};
+		csi0: csi@a0c2000 {
+			compatible = \"sophgo,sg2000-mipi-csi2\";		/* forward-port: single \"cvitek,cif\" node with regs MAC0,WRAP,MAC1,MAC2 */
+			reg = <0x0a0c2000 0x2000>;
+			interrupts = <SOC_PERIPHERAL_IRQ(10) IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clk CLK_CSI_MAC0_VIP>;			/* gate owned by vi in vendor code */
+			clock-names = \"mac\";
+			resets = <&vip_rst 2 /* csi_mac0 [GUESS idx] */>;
+			phys = <&csi_phy 0>;
+			phy-names = \"dphy\";
+			status = \"disabled\";
+			ports { #address-cells = <1>; #size-cells = <0>;
+				port@0 { reg = <0>; csi0_in: endpoint { /* remote-endpoint = <&sensor_out>; data-lanes = <1 2 3 4>; */ }; };
+				port@1 { reg = <1>; csi0_out: endpoint { remote-endpoint = <&isp_in0>; }; };
+			};
+		};
+		csi1: csi@a0c4000 {
+			compatible = \"sophgo,sg2000-mipi-csi2\";
+			reg = <0x0a0c4000 0x2000>;
+			interrupts = <SOC_PERIPHERAL_IRQ(11) IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clk CLK_CSI_MAC1_VIP>;
+			clock-names = \"mac\";
+			resets = <&vip_rst 3 /* csi_mac1 [GUESS idx] */>;
+			phys = <&csi_phy 1>;
+			phy-names = \"dphy\";
+			status = \"disabled\";
+		};
+		/* csi2 @a0c6000 (MAC2) has no IRQ in the vendor DTS; add only if needed. */
+
+		/* VPSS scaler block (vendor 'cvitek,vpss'): SCL_TOP+IMG+SC+DISP+BT+DSI MAC+CMDQ in one 64 KiB window,
+		 * shared 'sc' IRQ (hwirq 25) also carrying display vblank. Second vendor region 0x0a0d1000 is the DSI D-PHY -> moved to dsi_phy. */
+		vpss: scaler@a080000 {
+			compatible = \"sophgo,sg2000-vpss\";		/* forward-port: \"cvitek,vpss\" with 2 regs incl. <0x0a0d1000 0x100> */
+			reg = <0x0a080000 0x8000>;			/* [GUESS] split: scaler part only; vendor uses 0x10000 */
+			interrupts = <SOC_PERIPHERAL_IRQ(9) IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = \"sc\";
+			clocks = <&clk CLK_SRC_VIP_SYS_0>, <&clk CLK_SRC_VIP_SYS_1>, <&clk CLK_SRC_VIP_SYS_2>,
+				 <&clk CLK_IMG_D_VIP>, <&clk CLK_IMG_V_VIP>, <&clk CLK_SC_TOP_VIP>,
+				 <&clk CLK_SC_D_VIP>, <&clk CLK_SC_V1_VIP>, <&clk CLK_SC_V2_VIP>, <&clk CLK_SC_V3_VIP>;
+			clock-names = \"clk_sys_0\", \"clk_sys_1\", \"clk_sys_2\", \"clk_img_d\", \"clk_img_v\",
+				      \"clk_sc_top\", \"clk_sc_d\", \"clk_sc_v1\", \"clk_sc_v2\", \"clk_sc_v3\";
+			resets = <&vip_rst 4 /* sc_top [GUESS idx] */>;
+			memory-region = <&vip_cma>;
+			status = \"disabled\";
+		};
+
+		/* Display controller (DISP timing generator + GOP + output mux), vendor: inside vpss reg[0]+0x8000.
+		 * Shares the 'sc' IRQ with vpss (single INTR_STATUS) -> IRQF_SHARED or an irqchip in vpss [GUESS]. */
+		disp: display-controller@a088000 {
+			compatible = \"sophgo,sg2000-disp\";		/* [GUESS] DRM CRTC/plane driver; forward-port: \"cvitek,vo\" (no reg) + \"cvitek,fb\" */
+			reg = <0x0a088000 0x2000>;			/* DISP 0x8000-0x8fff, BT 0x9000-0x9fff; [GUESS] */
+			interrupts = <SOC_PERIPHERAL_IRQ(9) IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clk CLK_DISP_VIP>, <&clk CLK_BT_VIP>, <&clk CLK_SC_TOP_VIP>;
+			clock-names = \"clk_disp\", \"clk_bt\", \"clk_sc_top\";
+			resets = <&vip_rst 5 /* disp [GUESS idx] */>, <&vip_rst 6 /* bt [GUESS idx] */>;
+			reset-names = \"disp\", \"bt\";
+			memory-region = <&vip_cma>;
+			status = \"disabled\";
+			port { disp_out: endpoint { remote-endpoint = <&dsi_in>; }; };
+		};
+
+		/* CVITEK MIPI DSI MAC (vendor: vpss reg[0]+0xA000). Burst video mode only, 1/2/4 lanes. */
+		dsi: dsi@a08a000 {
+			compatible = \"sophgo,sg2000-dsi\";		/* [GUESS] DRM bridge/encoder */
+			reg = <0x0a08a000 0x1000>;
+			clocks = <&clk CLK_DSI_MAC_VIP>, <&clk CLK_DSI_ESC>;	/* CLK_DSI_ESC exists in sophgo,cv1800.h (not in vendor DTS) */
+			clock-names = \"clk_dsi\", \"esc\";
+			resets = <&vip_rst 7 /* dsi_mac [GUESS idx] */>;
+			phys = <&dsi_phy>;
+			phy-names = \"dphy\";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = \"disabled\";
+			ports { #address-cells = <1>; #size-cells = <0>;
+				port@0 { reg = <0>; dsi_in: endpoint { remote-endpoint = <&disp_out>; }; };
+				port@1 { reg = <1>; dsi_out: endpoint { /* remote-endpoint = <&panel_in>; */ }; };
+			};
+		};
+
+		/* DSI D-PHY wrap (vendor vpss/vo reg 0x0a0d1000/0x100; dsi_phy.c uses offsets <= 0xc8).
+		 * Its PLL code also touches VIP_SYS CLK_CTRL0 (dsi_phy.c:255-259) -> needs vip_syscon regmap. */
+		dsi_phy: phy@a0d1000 {
+			compatible = \"sophgo,sg2000-mipi-dsi-dphy\";	/* [GUESS] */
+			reg = <0x0a0d1000 0x100>;
+			clocks = <&clk CLK_DISPPLL>, <&clk CLK_MIPIMPLL>;	/* [GUESS] parents used by PLL math */
+			resets = <&rst 68>;				/* RST_DSIPHY: vendor id 68, no mainline macro */
+			sophgo,vip-syscon = <&vip_syscon>;		/* [GUESS] */
+			#phy-cells = <0>;
+			status = \"disabled\";
+		};
+
+		/* Dewarp (vendor 'cvitek,dwa'), V4L2 m2m candidate. */
+		dwa: dewarp@a0c0000 {
+			compatible = \"sophgo,sg2000-dwa\";		/* forward-port: \"cvitek,dwa\" */
+			reg = <0x0a0c0000 0x1000>;
+			interrupts = <SOC_PERIPHERAL_IRQ(12) IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = \"dwa\";
+			clocks = <&clk CLK_SRC_VIP_SYS_0>, <&clk CLK_SRC_VIP_SYS_1>, <&clk CLK_SRC_VIP_SYS_2>,
+				 <&clk CLK_SRC_VIP_SYS_3>, <&clk CLK_SRC_VIP_SYS_4>, <&clk CLK_DWA_VIP>;
+			clock-names = \"clk_sys_0\", \"clk_sys_1\", \"clk_sys_2\", \"clk_sys_3\", \"clk_sys_4\", \"clk_dwa\";
+			resets = <&vip_rst 8 /* ldc [GUESS idx] */>;
+			memory-region = <&vip_cma>;
+			status = \"disabled\";
+		};
+
+		/* Forward-port-only glue nodes (mode A). Not needed for a native DRM/V4L2 port. */
+		/* vip_sys: base { compatible = \"cvitek,base\"; reg = <0x0a0c8000 0x100>; reg-names = \"vip_sys\"; }; */
+		/* sys { compatible = \"cvitek,sys\"; memory-region = <&vip_cma>; };  -- replaces cvitek-ion + ion-region */
+		/* rgn { compatible = \"cvitek,rgn\"; };  ive@a0a0000 { compatible = \"cvitek,ive\"; reg = <0x0a0a0000 0x3100>; interrupts = <SOC_PERIPHERAL_IRQ(81) ...>; }; */
+	};
+};
+
+/* Board fragment (Duo S, from duos_sd.dts:113-120 + pinctrl TODO):
+&dsi { status = \"okay\";
+	panel@0 { compatible = \"<vendor>,<panel>\";  // vendor DT has no panel node: timing came from PANEL_TUNING_DEFAULT=MIPI_panel_milkv_8hd
+		reg = <0>;
+		reset-gpios = <&porte 2 GPIO_ACTIVE_LOW>;		// vendor reset-gpio
+		enable-gpios = <&porte 1 GPIO_ACTIVE_HIGH>;		// vendor power-ct-gpio
+		backlight = <&backlight>;				// vendor pwm-gpio <&porte 0> -> gpio-backlight
+		port { panel_in: endpoint { remote-endpoint = <&dsi_out>; }; };
+	};
+};
+&csi0 { status = \"okay\"; };  sensor on an i2c bus with reset-gpios = <&porta 2 GPIO_ACTIVE_LOW> (vendor snsr-reset). */
+findings:
+  -
+    finding: VIP_SYS base address is confirmed as 0x0A0C8000 by the vendor DTS, but the 'base' node declares only 0x20 bytes while the drivers use offsets up to 0xe0 (CLK_RATIO 0x30-0x48 from cif, 0x70 raw ioremap in scaler, RESETS1 0xc0, CLK_CTRL1 0x1c). It works only because ioremap is page-granular; the vo node declares the same block as 0xa0.
+    evidence: sg200x_base.dtsi:698-699 (0x0a0c8000/0x20), :742 (vo 0xa0); base.c:865-866 devm_ioremap_resource; reg_vip_sys.h lines 8-57 offsets 0x0..0x88 and line 1218 (0xe0); cif.c:1803-1814 VIP_NORM_CLK_RATIO_CONFIG; dwa_platform.c:272 CLK_CTRL1; Phase-1 sys-base line 4 (RESETS1 0xc0); Phase-1 vo report line 10 (0x0A0C8070)
+    confidence: verified
+  -
+    finding: cif pad_ctrl indexing quirk is real on production boards: with MAX_LINK_NUM=3 the probe loop maps all 5 reg entries (i=0..4) then asks for index 5, so the 5th entry 'pad_ctrl' 0x03001c30 is mapped but never assigned to dev->pad_ctrl ('no pad_ctrl for cif'). Any forward-port can drop that entry (it is inside the mainline pinctrl block anyway).
+    evidence: cif.c:2820-2846; cif_drv.h:4 MAX_LINK_NUM 3; sg200x_base.dtsi:669-672 (exactly 5 entries)
+    confidence: verified
+  -
+    finding: Every clock name in the vendor VIP/codec nodes has a same-named mainline id; numeric ids differ for almost all (e.g. clk_sys_2 136->102, clk_raw 157->134, clk_cam0 91->147, clk_disp 105->121, clk_tpu 15->11), while PLL ids (FPLL 2, MIPIMPLL 3, A0PLL 4, DISPPLL 5) coincide. All reset indices used by the DTS are numerically identical between cv181x-resets.h and cv18xx-reset.h; CSIPHY0/0_APB/1/1_APB (70-73) and DSIPHY (68) have no mainline macro but fit sophgo,cv1800b-reset (reg 0x1000).
+    evidence: /home/user/sg2000_linux_5.10/include/dt-bindings/clock/cv181x-clock.h vs /home/user/mainline_linux/include/dt-bindings/clock/sophgo,cv1800.h (values listed per node); cv181x-resets.h:14-20,38-42,59,63,79-84,97-99,106 vs cv18xx-reset.h:9-16,32-36,49,53,69-71,76; cv180x.dtsi:54-57
+    confidence: verified
+  -
+    finding: Of the VIP-domain consumers, only vi treats clocks as mandatory (probe fails on any missing name); vpss, vo, mipi_tx, cif treat them as optional (NULL on error). vo's three reg entries and its 'sc' IRQ lookup are compiled out (#if 0) — vo has no DT resources of its own except clocks and GPIO props, confirming the Phase-1 'vo owns no registers' claim.
+    evidence: vi_core.c:159-180 (return PTR_ERR); vpss_core.c ~1457-1470 (NULL); vo_core.c:127-137 (NULL), :160-172 and :185 (#if 0); vo_mipi_tx.c:617-630; cif.c ~2800-2818
+    confidence: verified
+  -
+    finding: vcodec and jpu nodes carry no memory-region and that is consistent: the reserved-video-memory code paths are compiled out (vcodec by -DCVI_H26X_USE_ION_FW_BUFFER, jpeg by USE_VMALLOC_FOR_INSTANCE_POOL_MEMORY), so codec work memory comes from ION via sys.ko. fb is the only VIP module with a mandatory memory-region.
+    evidence: vcodec/Makefile:7; cvi_vcodec.c:1262-1267; jpeg/cvi_jpeg.h:22; cvi_jpeg.c:76-78,460-463; cvifb.c:619-630
+    confidence: verified
+  -
+    finding: The ION carveout is NOT at a fixed address on the Linux side: the 'ion-region' reserved-memory node has only 'size', so the kernel allocates it dynamically, whereas memmap.py/u-boot/FreeRTOS assume ION_ADDR = FREERTOS_ADDR - ION_SIZE (0x9B400000 Duo S, 0x8BF00000 Nano) with RTOS fast-boot buffers inside it. The fixed vdev vring/buffer addresses 0x8F528000-0x8F630000 are hard-coded for all DRAM sizes.
+    evidence: sg200x_default_memmap.dtsi:18-42; memmap.py:43-57 (both boards); whether Linux's top-down placement coincides with the bootloader value was not verified
+    confidence: likely
+  -
+    finding: The board DTS files in the Debian repo cannot be compiled against the repo's own sg200x_base.dtsi: they include 'soph_*.dtsi' names that do not exist there, and they reference labels &vo (Duo S), &cvi_vo and &cvi_fb (LicheeRV Nano) that are not defined in sg200x_base.dtsi (nodes 'vo' and 'cvifb' are unlabeled). The production base comes from the kernel branch sg200x-5.10.y / licheervnano-merged-5.10.y, which is not in the local repos. The contract above is therefore 'verified from the repo copy'; the production file may add labels or small deltas.
+    evidence: duos_sd.dts:2-5,105; licheervnano_sd.dts:2-5,35,183; sg200x_base.dtsi:740,763; build script (chip.mk-derived Makefile) lines 95-100,237-240,296,306; grep for 'cvi_vo:' across scratchpad/ext returned nothing; vendor 5.10 kernel arch/riscv/boot/dts/cvitek contains only a Makefile
+    confidence: likely
+  -
+    finding: sg200x and cv181x SoC DTS variants are the same file: sg200x_base.dtsi == cv181x_base.dtsi byte-for-byte; the riscv wrappers differ only in model string, the cooling node label/compatible ('sophgo,cooling' vs 'cvitek,cv181x-cooling') and #interrupt-cells on GPIO ports; memmap files differ only in whitespace.
+    evidence: diff outputs in this session for the three file pairs
+    confidence: verified
+  -
+    finding: Compatible mismatch: the sg200x riscv wrapper gives the cooling node 'sophgo,cooling' but the osdrv clock_cooling snapshot only matches 'cvitek,cv181x-cooling'; the module is disabled in the vendor init script anyway. Also the osdrv wdt binds to 'snps,dw-wdt', the same compatible as mainline dw_wdt (double-binding hazard if both are built).
+    evidence: sg200x_base_riscv.dtsi:95; clock_cooling/cv181x/clock_cooling.c:260; S00kmod:74-75; cvi_wdt.c:395
+    confidence: verified
+  -
+    finding: The vendor DT describes no panel, no camera sensor, no CSI/DSI lane topology and no pinmux: panel timing comes from PANEL_TUNING_* build variables / middleware, sensors from userspace libsns_*, and pinmux from u-boot plus raw FMUX writes (vendor pinctrl node is '#if 0'; QFN i2c nodes carry raw scl-pinmux/sda-pinmux register triples showing DSI lane-1 pads muxed to I2C2 on QFN). A mainline DRM/V4L2 port must author panel/sensor/graph/pinctrl nodes from board schematics, not from the vendor DT.
+    evidence: settings.mk (both boards) PANEL_TUNING_DEFAULT/EXTRA; sg200x_base.dtsi:888-893; sg200x_asic_qfn.dtsi:77-84; duos_sd.dts:43-120; licheervnano_sd.dts:35-59,188-190; DIGEST pinctrl paragraph
+    confidence: verified
+  -
+    finding: Default module load order on these images (S00kmod) is sys, base, rtos_cmdqu, fast_image, mipi_rx(cif), snsr_i2c, vi, vpss, dwa, vo, rgn, tpu, vcodec, jpeg, vc_driver, ive, mon, wiegand; mipi_tx, wdt, clock_cooling, rtc, pwm, saradc are NOT loaded (commented), so the DSI output runs from vo alone and the mipi_tx GPIO props are only consumed when that module is loaded manually.
+    evidence: scripts/addons/load-systemko/S00kmod:60-89; build Makefile lines 406-411 remove soph_{clock_cooling,pwm,rtc,saradc,wdt}.ko from the package
+    confidence: verified
+  -
+    finding: Effort to produce and validate the DT part only (write sg2000-vip.dtsi + board fragments, a VIP_SYS syscon/reset/clk-gate provider, CMA pool, and verify probe of forward-ported cvitek,* modules on Duo S): 1-3 engineer-weeks, assuming the module code is already compiling on 7.3 (per DIGEST estimates) and a board with serial console is available. The DRM/V4L2 bindings in the sketch add binding-review iterations (typically 2-4 weeks of calendar time per series on dt-bindings list) on top of the driver work estimated elsewhere.
+    evidence: Derived from node inventory above and DIGEST effort ranges; no new measurement
+    confidence: unverified
