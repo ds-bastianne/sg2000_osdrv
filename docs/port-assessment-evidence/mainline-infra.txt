@@ -1,0 +1,188 @@
+Phase-1 reader report: mainline-infra (generated 2026-10-06; evidence as file:line in the named repository; see docs/sg2000-kernel-port-plan.md)
+
+scope: Survey of what mainline Linux 7.3-rc6 (/home/user/mainline_linux, HEAD 2c3418fffa9d, 2026-10-06) already provides for an SG2000/CV181x display+camera port, cross-checked against the vendor osdrv tree (/home/user/sg2000_osdrv interdrv/v2) where needed to judge what is missing. Covers: (1) SoC DTS/bindings/CMO, (2) clock/reset, (3) memory/dma-buf heaps, (4) camera/V4L2/ISP references, (5) DRM display helpers and references, (6) codec, (7) accel/TPU, (8) mailbox/remoteproc. Every claim cites file:line read with grep/sed; no kernel was built. Effort figures are estimates in engineer-weeks with stated assumptions, not measurements.
+findings:
+  -
+    topic: SoC DTS: nodes present
+    finding: cv180x.dtsi (shared by cv1800b/cv1812h/sg2000/sg2002) models only: top syscon (with usb2-phy and dmamux children), reset, mdio-mux, 5x dw-apb-gpio, saradc, 5x designware i2c, dwmac, 5x dw-apb-uart, 4x dw-apb-ssi, 2x sdhci (dwcmshc), axi-dma, dwc2 usb, rtc. cv181x.dtsi adds only emmc. sg2000.dtsi adds pinctrl, clock-controller@3002000, plic, clint and a 512 MiB memory node.
+    evidence: arch/riscv/boot/dts/sophgo/cv180x.dtsi:29-471 (compatible list: sophgo,cv1800b-top-syscon:29, usb2-phy:36, dmamux:47, cv1800b-reset:55, mdio-mux-mmioreg:61, dw-apb-gpio:88/107/126/145/452, saradc:164, designware-i2c:186-235, cv1800b-dwmac:246, dw-apb-uart:292-388, dw-apb-ssi:340-377, dwcmshc:400/410, axi-dma:420, cv1800b-usb:436, cv1800b-rtc:470); cv181x.dtsi:11-19 (emmc only); sg2000.dtsi:14-16 memory reg <0x80000000 0x20000000>, :24-27 pinctrl, :30-35 clk, :37-45 plic, :47-51 clint.
+    confidence: verified
+    implication_for_port: All multimedia DT nodes (VI/ISP, CIF/CSI-RX, VPSS, VO, DSI TX, DPHY, VC, JPEG, TPU, IVE, DWA, RGN, mailbox) and their YAML bindings must be authored from scratch and derived from osdrv probe code, since board DTS lives in the SDK 'build' repo we do not have.
+  -
+    topic: SoC DTS: nodes missing
+    finding: No VIP/VPSS/ISP/DSI/CSI/MIPI/video/codec/TPU/mailbox/display/fb/reserved-memory/CMA node exists in any cv18xx/sg200x dtsi; the only reserved-memory node in the whole family is a 2 MiB no-map region for the FreeRTOS coprocessor on sg2002-milkv-duo256m.dts. sg2000-milkv-duo-s.dts enables only dmac, emmc, gmac0, i2c4, mdio, saradc, sdhci0/1, uart0/4, usb. Even the mailbox, for which a mainline driver and binding exist, has no DT node.
+    evidence: grep -niE 'vip|vpss|isp|dsi|csi|mipi|reserved-memory|cma|shared-dma-pool|video|codec|tpu|mailbox|display' over arch/riscv/boot/dts/sophgo/*.dtsi *.dts returned only thead,c900-plic/clint compatibles and sg2042 entries; sg2002-milkv-duo256m.dts:40-49 (coprocessor_rtos: region@8fe00000 reg <0x8fe00000 0x200000>; no-map); sg2000-milkv-duo-s.dts:168-243 (&dmac/&emmc/&gmac0/&i2c4/&mdio/&saradc/&sdhci0/&sdhci1/&uart0/&uart4/&usb status okay); sg2002.dtsi:17-19 memory 256 MiB; Documentation/devicetree/bindings/mailbox/sophgo,cv1800b-mailbox.yaml:55-56 example mailbox@1900000.
+    confidence: verified
+    implication_for_port: A port must add: reserved-memory with 'reusable' shared-dma-pool CMA regions (to get dma-heaps), a mailbox node, and ~12 new multimedia nodes with new bindings; board DTS for Duo S must be extended (panel/camera/LT8912B wiring).
+  -
+    topic: SoC DTS/arch: dma-noncoherent and T-Head CMO handling
+    finding: The soc node carries 'dma-noncoherent'. cv180x-cpus.dtsi declares no Zicbom/Xtheadcmo ISA extension; non-coherent DMA on C906 relies on the T-Head CMO errata, which applies when mvendorid is T-Head and arch_id==0 && impid==0, sets riscv_cbom_block_size = L1_CACHE_BYTES and registers dcache clean/inval/flush ops. ERRATA_THEAD_CMO is 'default y' but its parent ERRATA_THEAD has no default and is not set in any arch/riscv/configs/* file (CONFIG_ARCH_THEAD=y and ARCH_SOPHGO=y are).
+    evidence: sg2000.dtsi:21 dma-noncoherent; cv180x-cpus.dtsi:23-25 riscv,isa-extensions = i,m,a,f,d,c,zicntr,zicsr,zifencei,zihpm (no zicbom); arch/riscv/errata/thead/errata.c:74-100 THEAD_CMO_OP INVAL/CLEAN/FLUSH, :109-125 errata_probe_cmo (arch_id != 0 || impid != 0 -> false; riscv_cbom_block_size = L1_CACHE_BYTES; riscv_noncoherent_supported(); riscv_noncoherent_register_cache_ops); arch/riscv/Kconfig.errata:99-108 ERRATA_THEAD (no default), :120-126 ERRATA_THEAD_CMO default y, select DMA_DIRECT_REMAP, RISCV_DMA_NONCOHERENT, RISCV_NONSTANDARD_CACHE_OPS; grep ERRATA_THEAD arch/riscv/configs/ -> empty; arch/riscv/configs/defconfig:30 ARCH_SOPHGO=y, :35 ARCH_THEAD=y.
+    confidence: verified
+    implication_for_port: The port's kernel config must enable CONFIG_ERRATA_THEAD (and hence THEAD_CMO) or every DMA-engine driver (VI/VPSS/VO/VC) will see stale cache data. No driver-level cache code is needed if the standard DMA API is used.
+  -
+    topic: DMA cache-maintenance symbols used by osdrv are not exported in mainline
+    finding: arch_sync_dma_for_device()/arch_sync_dma_for_cpu() exist in arch/riscv/mm/dma-noncoherent.c but carry no EXPORT_SYMBOL (only dma_cache_alignment is exported). The vendor 5.10 kernel exported them (per CONTEXT) and osdrv modules call them directly from fb and tpu. The exported mainline equivalents are __dma_sync_single_for_cpu/device and __dma_sync_sg_for_cpu/device.
+    evidence: arch/riscv/mm/dma-noncoherent.c:16 EXPORT_SYMBOL_GPL(dma_cache_alignment) only; :69 arch_sync_dma_for_device, :98 arch_sync_dma_for_cpu, :117 arch_dma_prep_coherent with no EXPORT; kernel/dma/mapping.c:393/410/427/444 EXPORT_SYMBOL(__dma_sync_single_for_cpu/_for_device/__dma_sync_sg_*); osdrv interdrv/v2/fb/cvifb.c:419,552,766 and interdrv/v2/tpu/common/cvi_tpu_interface.c:970 call arch_sync_dma_for_device(); 10 total hits for arch_sync_dma_*/dcache ops in interdrv/v2.
+    confidence: verified
+    implication_for_port: Any out-of-tree or in-tree port must replace direct arch_sync_dma_* calls with dma_sync_single_for_*/dma_sync_sgtable_* on properly mapped buffers (or dma-buf begin/end_cpu_access).
+  -
+    topic: Devicetree bindings and drivers/soc for Sophgo
+    finding: Mainline has 25 sophgo* binding files: clock (cv1800-clk, sg2042-*, sg2044-clk), dma (cv1800b-dmamux), hwmon, iio/adc (cv1800b-saradc), interrupt-controller (sg2042-msi), mailbox (cv1800b-mailbox), net (cv1800b-dwmac, sg2044-dwmac), pci, phy (cv1800b-usb2-phy), pinctrl (cv1800-pinctrl, sg2042), pwm, reset (sg2042-reset), rtc (cv1800b-rtc), soc (cv1800b-top-syscon, sg2044-top-syscon, sophgo.yaml board list incl. milkv,duo-s/sophgo,sg2000 and milkv,duo256m + sipeed,licheerv-nano-b/sophgo,sg2002), sound (cv1800b-codecs, cv1800b-i2s). Zero sophgo/cvitek bindings under media/, display/, remoteproc/, hwlock/. drivers/soc/sophgo contains cv1800-rtcsys.c and sg2044-topsys.c only. CV18xx drivers in tree: clk-cv1800, cv1800b-dmamux, dw-axi-dmac glue, sophgo-cv1800b-adc, cv1800-mailbox, sdhci-of-dwcmshc, phy-cv1800-usb2, pinctrl-{cv1800b,cv1812h,sg2000,sg2002}, reset-simple, cv1800-rtcsys, dwc2 params, sound/soc/sophgo cv1800b-{tdm,sound-adc,sound-dac}.
+    evidence: find Documentation/devicetree/bindings -iname '*sophgo*' (25 results listed in tool output); Documentation/devicetree/bindings/soc/sophgo/sophgo.yaml:34-46; grep -rli 'sophgo|cvitek' Documentation/devicetree/bindings/{media,display,remoteproc,hwlock} -> empty; ls drivers/soc/sophgo -> Kconfig Makefile cv1800-rtcsys.c sg2044-topsys.c; grep -rlE 'sophgo,(cv1800|cv181|sg200)' drivers sound --include=*.c (19 files listed).
+    confidence: verified
+    implication_for_port: Base platform (boot, storage, net, USB, I2C for sensors/panels/bridges, pinctrl, clocks) is upstream; the port effort concentrates entirely on the VIP/VC subsystems plus their bindings.
+  -
+    topic: Clock: VIP/VC clock tree coverage in clk-cv1800.c
+    finding: clk-cv1800.c (1540 lines) models the full 0x03002000 clock controller including the VIP gates and dividers used by display/camera/codec: clk_axi_vip and clk_src_vip_sys_0..4 muxes/dividers, gates clk_csi_mac0_vip, clk_isp_top_vip, clk_img_d_vip, clk_sc_top_vip, clk_dwa_vip, clk_bt_vip, clk_disp_vip, clk_dsi_mac_vip, clk_csi0_rx_vip, clk_ive_vip, clk_h264c, clk_h265c, clk_jpeg, clk_tpu/tpu_fab, plus PLLs MIPIMPLL/DISPPLL/CAM0PLL/CAM1PLL. The sg2000 descriptor reuses cv1810_hw_clks and only adds cv18xx_clk_disable_auto_pd() in pre_init. The binding allows exactly one reg range (0x03002000 0x1000).
+    evidence: include/dt-bindings/clock/sophgo,cv1800.h:12-22 (MIPIMPLL/DISPPLL/CAM0PLL/CAM1PLL/TPU), :109-133 (CLK_DSI_ESC 98, CLK_AXI_VIP 99, CLK_SRC_VIP_SYS_0..4 100-104, CSI/ISP/IMG/SC/DWA/BT/DISP/DSI_MAC_VIP 105-122), :140-158 (CLK_VIP_IP0-3, CLK_IVE_VIP 133, CLK_CAM0_VIP 136, CLK_VC_SRC0-2, CLK_H264C 141, CLK_H265C 143, CLK_JPEG 145), :174 CLK_DISP_SRC_VIP 161; drivers/clk/sophgo/clk-cv1800.c:627-675 vip_sys parents/muxes, :678-771 VIP gates, :844-850 h264c/h265c/jpeg gates, :1440-1452 sg2000_pre_init/sg2000_desc (.clks_data = &cv1810_hw_clks); Documentation/devicetree/bindings/clock/sophgo,cv1800-clk.yaml:27-28 reg maxItems 1, :50 reg = <0x03002000 0x1000>.
+    confidence: verified
+    implication_for_port: Ported drivers can request their clocks via standard clk_bulk API using these IDs; no clock-controller work is needed for the top-level clock tree.
+  -
+    topic: Clock/reset: VIP_SYS sub-controller is NOT modelled anywhere in mainline
+    finding: osdrv drivers program a separate VIP-subsystem register block through vip_sys_reg_write_mask()/vip_sys_reg_read()/vip_sys_set_offline(): CSI-MAC normalisation dividers (VI), VIP_SYS_VIP_CLK_CTRL1 bit 20 (DWA), VIP_SYS_REG_RST_IVE_TOP soft reset (IVE), AXI bus offline control (base). Mainline has no clock, reset or syscon driver for this block, and the clk binding cannot take a second reg range. The exact base address (CONTEXT says 0x0a0c8000) could not be located as a #define in osdrv during this survey.
+    evidence: osdrv interdrv/v2/vi/chip/cv181x/vi.c:2489-2491 vip_sys_reg_write_mask(VIP_SYS_REG_NORM_DIV_VAL_CSI_MAC0,...); interdrv/v2/dwa/common/dwa_platform.c:272 vip_sys_reg_write_mask(VIP_SYS_VIP_CLK_CTRL1, BIT(20), BIT(20)); interdrv/v2/ive/hal/cv181x/cvi_ive_platform.c:3817-3821 VIP_SYS_REG_RST_IVE_TOP; interdrv/v2/base/chip/cv181x/vip_common.h:156-157 prototypes vip_sys_reg_write_mask / vip_sys_set_offline; interdrv/v2/dwa/common/reg.c:39-54 REG_VIP_SYS_BASE indexing; mainline: grep 'vip_sys|0x0a0c8|sys_ctrl' drivers/clk/sophgo/clk-cv1800.c -> only the 0x03002000 src_vip_sys dividers; cv1800-clk.yaml:27-28 single reg.
+    confidence: likely
+    implication_for_port: A small new 'sophgo,cv1800-vip-sys' syscon (regmap) or auxiliary clock+reset provider is required; VI/VPSS/VO/DWA/IVE drivers would reference it via a syscon phandle. Base address and register map must be extracted from osdrv headers (open question).
+  -
+    topic: Reset controller coverage
+    finding: reset-simple binds to 'sophgo,cv1800b-reset'; the shared header cv18xx-reset.h defines 89 reset lines including codec/VIP relevant ones: RST_H264C 3, RST_JPEG 4, RST_H265C 5, RST_VIPSYS 6, RST_TPU 8, RST_TPUSYS 9, RST_WGN0-2 86-88, RST_VCSYS 95, RST_VIP_CAM0 99. Finer-grained per-IP resets inside VIP (e.g. IVE_TOP) are in the VIP_SYS block, not here.
+    evidence: drivers/reset/reset-simple.c:154 { .compatible = "sophgo,cv1800b-reset" }; arch/riscv/boot/dts/sophgo/cv18xx-reset.h:10-16, 69-71, 76, 80 (89 #defines total); cv180x.dtsi:55-56 reset@3003000; reset binding file present: Documentation/devicetree/bindings/reset/sophgo,sg2042-reset.yaml (whether it enumerates cv1800b-reset: unverified).
+    confidence: verified
+    implication_for_port: Top-level subsystem resets (VIPSYS, VCSYS, H264C/H265C/JPEG, TPU) are usable via 'resets = <&rst RST_...>' today; per-block VIP resets need the VIP_SYS provider above.
+  -
+    topic: Memory: dma-buf heaps uAPI and multi-region CMA support
+    finding: Mainline ships exactly two heaps: system_heap.c and cma_heap.c; no 'carveout' heap exists (grep empty) and there is no in-kernel allocation API in include/linux/dma-heap.h (only dma_heap_add/dma_heap_get_name). cma_heap registers one heap for the default CMA area ('reserved' name) and one heap per additional dma-contiguous area, named after the reserved-memory node name, via dma_contiguous_get_area_by_idx(). A reserved-memory node becomes a CMA area only if it has compatible 'shared-dma-pool' + 'reusable' and no 'no-map'; up to CMA_AREAS (default 8) areas. uAPI is a single ioctl DMA_HEAP_IOCTL_ALLOC with heap_flags required to be 0. DMABUF_HEAPS_CMA depends on DMA_CMA; the riscv defconfig does not enable CMA/DMA_CMA/DMABUF_HEAPS.
+    evidence: ls drivers/dma-buf/heaps -> cma_heap.c (425 lines), system_heap.c (548); grep -rni carveout drivers/dma-buf include/linux/dma-heap.h include/uapi/linux/dma-heap.h -> empty; include/linux/dma-heap.h:45-47 only dma_heap_get_name/dma_heap_add; drivers/dma-buf/heaps/cma_heap.c:397-421 add_cma_heaps (default_cma -> DEFAULT_CMA_NAME; loop dma_contiguous_get_area_by_idx(i) -> __add_cma_heap(cma, cma_get_name(cma))); kernel/dma/contiguous.c:55-84 dma_contiguous_areas[MAX_CMA_AREAS], dma_contiguous_get_area_by_idx EXPORT_SYMBOL_GPL; :505-515 __rmem_cma_verify_node requires 'reusable' and rejects 'no-map'; :560 cma_init_reserved_mem(rmem->base, rmem->size, 0, rmem->name, &cma); :589 RESERVEDMEM_OF_DECLARE(cma, "shared-dma-pool"); mm/Kconfig:1087-1088 CMA_AREAS default 8; include/uapi/linux/dma-heap.h:22 DMA_HEAP_VALID_HEAP_FLAGS (0ULL), :50-51 DMA_HEAP_IOCTL_ALLOC; drivers/dma-buf/heaps/Kconfig DMABUF_HEAPS_CMA depends on DMABUF_HEAPS && DMA_CMA; arch/riscv/configs/defconfig has no CMA/DMABUF lines.
+    confidence: verified
+    implication_for_port: ION replacement: define per-purpose reserved-memory CMA pools (e.g. 'vpp', 'vcodec') and let the userspace SDK allocate via /dev/dma_heap/<name>, passing fds to V4L2 (VIDIOC_QBUF DMABUF) and DRM (PRIME). Kernel drivers must not allocate from heaps; they use dma_alloc_coherent/vb2-dma-contig/drm_gem_dma. All 53 osdrv .c files touching ion APIs need rework (grep -rlE 'cvi_ion_alloc|sys_ion_alloc|ion_' interdrv/v2 -> 53).
+  -
+    topic: Camera: V4L2 core state (media controller, subdev streams, videobuf2)
+    finding: V4L2 has the modern multiplexed-streams subdev API (v4l2_subdev_state with stream_configs, v4l2_subdev_enable_streams, V4L2_SUBDEV_FL_STREAMS) and videobuf2 with dma-contig, dma-sg and vmalloc allocators. The Cadence CSI2RX driver already uses the streams API. The riscv defconfig enables CONFIG_VIDEO_CADENCE_CSI2RX=m and MEDIA_SUPPORT=m.
+    evidence: include/media/v4l2-subdev.h:461 (v4l2_subdev_enable_streams), :714-727 struct v4l2_subdev_state / @stream_configs (only for V4L2_SUBDEV_FL_STREAMS); drivers/media/platform/cadence/cdns-csi2rx.c:966 V4L2_SUBDEV_FL_STREAMS; ls drivers/media/common/videobuf2 -> videobuf2-core.c, -dma-contig.c, -dma-sg.c, -vmalloc.c, -v4l2.c; arch/riscv/configs/defconfig:191-193 MEDIA_SUPPORT=m, MEDIA_PLATFORM_SUPPORT=y, VIDEO_CADENCE_CSI2RX=m.
+    confidence: verified
+    implication_for_port: A CIF->ISP->scaler pipeline can be modelled as media-controller subdevs with per-stream routing; vb2-dma-contig fits the non-coherent contiguous buffer requirement.
+  -
+    topic: Camera: MIPI CSI-2 receiver reference drivers
+    finding: Reference CSI-2 RX subdev drivers and sizes: cadence/cdns-csi2rx.c 1113 lines, sunxi/sun6i-mipi-csi2 771, nxp/imx-mipi-csis.c 1637, synopsys/dw-mipi-csi2rx.c 1063, rockchip/rkcif 3180 (px30-vip, rk3568/rk3588-vicap). The osdrv CIF driver ('cvitek,cif') contains no Cadence/Synopsys identifiers, so the CV181x CSI-RX appears to be CVITEK-proprietary and none of these can be reused directly; they serve as structural templates. StarFive camss is not present in this tree.
+    evidence: wc -l drivers/media/platform/cadence/cdns-csi2rx.c (1113), sunxi/sun6i-mipi-csi2/sun6i_mipi_csi2.c (771), nxp/imx-mipi-csis.c (1637), synopsys/dw-mipi-csi2rx.c (1063), rockchip/rkcif/*.c (3180 total); rkcif-dev.c:72-80 compatibles; osdrv interdrv/v2/cif/chip/cv181x/cif.c:3400 {.compatible = "cvitek,cif"}; grep -rliE 'cadence|cdns|synopsys|dw_csi' interdrv/v2/cif -> only generic 'dphy' hits in cif.c/cif_drv.c; ls drivers/media/platform | grep starfive -> empty.
+    confidence: verified
+    implication_for_port: A new ~1000-1500 line CSI-2 RX subdev driver (with integrated D-PHY RX) must be written following cdns-csi2rx/imx-mipi-csis patterns; IP identity of CV181x CSI-RX is unverified.
+  -
+    topic: Camera: ISP reference drivers and the generic V4L2 ISP params/stats uAPI
+    finding: Mainline now has a vendor-neutral, versioned, block-based ISP parameters/statistics serialization format (include/uapi/linux/media/v4l2-isp.h, helpers in drivers/media/v4l2-core/v4l2-isp.c, design doc Documentation/driver-api/media/v4l2-isp.rst) used by rkisp1 (extensible params), renesas rcar-isp and dreamchip rppx1. ISP drivers with params+stats nodes available as references: rockchip/rkisp1 (12317 lines total; rkisp1-params.c 2950, 229 ext_params references), arm/mali-c55 (5482), amlogic/c3/isp (4054), raspberrypi/pisp_be (1796), dreamchip/rppx1 (2796), amd/isp4, renesas/rcar-isp, staging sunxi/sun6i-isp (2438, has sun6i_isp_params.c). Admin-guide docs for c3-isp and pisp_be state that 3A/control algorithms live in libcamera.
+    evidence: include/uapi/linux/media/v4l2-isp.h (135 lines): :16-32 enum v4l2_isp_version V0/V1, :43-53 V4L2_ISP_PARAMS_FL_BLOCK_DISABLE/ENABLE and V4L2_ISP_FL_DRIVER_FLAGS(n), :56-57 struct v4l2_isp_block_header; grep users -> drivers/media/v4l2-core/v4l2-isp.c, renesas/rcar-isp/core-io.c, rockchip/rkisp1/rkisp1-params.c, dreamchip/rppx1/*.c; Documentation/driver-api/media/v4l2-isp.rst lines 1-45 (design rationale quoted in tool output); include/uapi/linux/rkisp1-config.h:1618 RKISP1_EXT_PARAMS_MAX_SIZE, :1714 struct rkisp1_ext_params_cfg; uapi headers include/uapi/linux/media/{arm/mali-c55-config.h, amlogic/c3-isp-config.h, dreamchip/rppx1-config.h, raspberrypi/pisp_be_config.h,pisp_fe_*}; Documentation/userspace-api/media/v4l/metafmt-{rkisp1,c3-isp,pisp-be,pisp-fe,arm-mali-c55,rppx1}.rst; Documentation/admin-guide/media/c3-isp.rst:99 and raspberrypi-pisp-be.rst:26 reference libcamera.
+    confidence: verified
+    implication_for_port: The accepted upstream model for a CVITEK ISP is: kernel driver exposes raw register-level parameter blocks and statistics through v4l2-isp.h framing; all 3A/tuning (currently in the vendor middleware/ISP library) must be reimplemented or wrapped as a libcamera IPA. This is the largest and least-derisked part of the camera port.
+  -
+    topic: Camera/post-processing: m2m references for VPSS scaler and DWA/LDC
+    finding: Mainline has V4L2 mem2mem references matching osdrv VPSS (scaler/CSC/rotation) and DWA (dewarp/LDC): rockchip/rga (2345 lines) and nxp/dw100 hardware dewarper (1737 lines, grid-map based).
+    evidence: wc -l drivers/media/platform/rockchip/rga/*.c -> 2345 total; drivers/media/platform/nxp/dw100/dw100.c (1737 lines), :3 'DW100 Hardware dewarper', :311-375 dewarp map creation.
+    confidence: verified
+    implication_for_port: VPSS and DWA can be exposed as standalone V4L2 m2m devices (independent of the capture pipeline), which is the simplest path for the SDK to keep offline scaling/dewarp features.
+  -
+    topic: Display: DRM helper infrastructure
+    finding: DRM provides everything a simple SoC display pipe needs: drm_simple_kms_helper (375 lines; not deprecated, only drm_simple_encoder_init is on the TODO list), drm_gem_dma_helper (611), drm_fbdev_dma (323, DRM_FBDEV_DMA_DRIVER_OPS + drm_client_setup for fbdev emulation), drm_mipi_dsi (2081 lines; host ops attach/detach/transfer; 44 *_multi DCS helpers), drm_panel (730), 138 panel drivers of which 106 are DSI panels (incl. ili9881c, st7701, jd9365da-h3, hx8394), 46 bridge drivers incl. lontium-lt8912b.c (842 lines, DSI->HDMI, devm_mipi_dsi_attach) with YAML binding, drm_of_find_panel_or_bridge/devm_drm_of_get_bridge, and generic MIPI D-PHY timing helpers. riscv defconfig builds DRM=m and DRM_SUN4I=m. No sophgo DRM or display PHY driver exists (drivers/phy/sophgo has only usb2).
+    evidence: wc -l drivers/gpu/drm/drm_simple_kms_helper.c 375, drm_gem_dma_helper.c 611, drm_fbdev_dma.c 323, drm_mipi_dsi.c 2081, drm_panel.c 730, bridge/lontium-lt8912b.c 842; Documentation/gpu/todo.rst:32-40 (only drm_simple_encoder_init removal); include/drm/drm_fbdev_dma.h:13-16 DRM_FBDEV_DMA_DRIVER_OPS; include/drm/clients/drm_client_setup.h:12-13; include/drm/drm_mipi_dsi.h:90-97 struct mipi_dsi_host_ops {attach, detach, transfer}; grep -c '_multi' include/drm/drm_mipi_dsi.h -> 44; ls drivers/gpu/drm/panel/*.c | wc -l -> 138; grep -l mipi_dsi_driver panel/*.c | wc -l -> 106; ls drivers/gpu/drm/bridge/*.c | wc -l -> 46; lontium-lt8912b.c:500 devm_mipi_dsi_attach, :817 compatible lontium,lt8912b; Documentation/devicetree/bindings/display/bridge/lontium,lt8912b.yaml; include/drm/drm_of.h:54, include/drm/drm_bridge.h:1506; include/linux/phy/phy-mipi-dphy.h:278,282 phy_mipi_dphy_get_default_config*; ls drivers/phy/sophgo -> phy-cv1800-usb2.c only; arch/riscv/configs/defconfig:194,197 DRM=m, DRM_SUN4I=m.
+    confidence: verified
+    implication_for_port: A DRM driver for VO needs only: a CRTC/plane (disp engine), a DSI host encoder (dsi_mac + D-PHY TX), optional BT656/LVDS encoders, and reuse of existing panel/bridge drivers; the osdrv 'fb' and 'vo' misc drivers would be replaced rather than ported.
+  -
+    topic: Display: closest DSI-host/simple-DRM reference drivers and their size
+    finding: Comparable vendor DSI host drivers: sun4i/sun6i_mipi_dsi.c 1265 lines, sprd/sprd_dsi.c 1066, mcde/mcde_dsi.c 1242, mediatek/mtk_dsi.c 1331, bridge/synopsys/dw-mipi-dsi.c 1342 (+ rockchip glue 1764, stm glue 800). Complete small DRM drivers: imx/lcdc 534 lines, mxsfb 2327, sprd 2441, sun4i core (backend/tcon/drv/layer/crtc + sun6i dsi) 8317.
+    evidence: wc -l drivers/gpu/drm/sun4i/sun6i_mipi_dsi.c 1265, sprd/sprd_dsi.c 1066, mcde/mcde_dsi.c 1242, mediatek/mtk_dsi.c 1331, bridge/synopsys/dw-mipi-dsi.c 1342, rockchip/dw-mipi-dsi-rockchip.c 1764, stm/dw_mipi_dsi-stm.c 800; drivers/gpu/drm/imx/lcdc/imx-lcdc.c 534; mxsfb/*.c 2327 total; sprd/*.c 2441 total; sun4i selected files 8317 total.
+    confidence: verified
+    implication_for_port: A from-scratch SG2000 DRM driver (CRTC + DSI host + D-PHY) should land in the 2000-3500 line range by analogy with sprd/mxsfb; the osdrv vo+vpss disp/dsi code supplies the register sequences.
+  -
+    topic: Display: fbdev policy
+    finding: In-tree documentation calls fbdev 'the deprecated fbdev subsystem' and /dev/fb* a 'legacy' device (FB_DEVICE option); the FRAMEBUFFER LAYER is still 'Maintained'. An explicit in-tree statement that new fbdev drivers are not accepted was not found; that policy is enforced on the mailing lists (unverified from tree).
+    evidence: Documentation/gpu/drm-kms-helpers.rst:21-23 ('anything that would have been a great fit in the deprecated fbdev subsystem ... simple display pipe helpers'); drivers/video/fbdev/core/Kconfig:14-18 FB_DEVICE 'Provide legacy /dev/fb* device'; drivers/video/fbdev/Kconfig:35-37 ('The DRM subsystem provides support for emulated frame buffer devices on top of KMS drivers, but this option allows legacy fbdev drivers'); MAINTAINERS:10338-10342 FRAMEBUFFER LAYER S: Maintained; grep -rniE 'new fbdev drivers|no new fbdev' Documentation MAINTAINERS -> empty.
+    confidence: likely
+    implication_for_port: Porting osdrv 'fb' (cvifb.c) as an fbdev driver is not an upstreamable path; /dev/fb0 compatibility comes for free from DRM fbdev emulation (drm_fbdev_dma).
+  -
+    topic: Codec: Chips&Media wave5 and coda coverage vs SG2000 cores
+    finding: osdrv vcodec drives a WAVE420L (product code 0x4201) for H.265 and a CODA980 (0x9800) for H.264 (W-series -> core 0, non-W -> core 1). Mainline wave5 supports only WAVE5xx cores (515/517/537/511/521/521C/521C_DUAL/521E1) and binds solely to 'ti,j721s2-wave521c'; mainline coda supports CODA_DX6/HX4/7541/960 via fsl,imx* compatibles and includes coda-jpeg.c (CODA7/CODA9 MJPEG modes). Neither CODA980 nor any WAVE4xx is supported anywhere in mainline; there is no CODAJ12 (standalone C&M JPEG) driver. osdrv jpeg uses a C&M JPU-style API (jpu_*, jpudrv_buffer_t), IP identity unverified.
+    evidence: osdrv interdrv/v2/vcodec/vpuconfig.h:20 CODA980_CODE 0x9800, :25 WAVE420L_CODE 0x4201, :35-40 PRODUCT_CODE_W_SERIES/NOT_W_SERIES; interdrv/v2/vcodec/cvi_vcodec.c:404-423 product_code dispatch to coreIdx 0/1; mainline drivers/media/platform/chips-media/wave5/wave5-vpuconfig.h:11-18 WAVE515..WAVE521E1 codes; wave5-hw.c:203-212 switch over the same list; wave5-vpu.c:467 { .compatible = "ti,j721s2-wave521c" }; wave5/Kconfig:12-13 'supports HEVC and H264'; coda/coda.h:50-53 CODA_DX6/HX4/7541/960; coda-common.c:3136-3140 fsl,imx27/51/53/6q/6dl-vpu; coda-common.c:163,167 CODA9_MODE_ENCODE/DECODE_MJPG; grep -rliE 'codaj|CODAJ12' drivers/media -> empty; osdrv interdrv/v2/jpeg: jpu_device/jpu_mask/jpudrv_buffer_t identifiers.
+    confidence: verified
+    implication_for_port: H.264 could potentially be added to the coda driver as a CODA980 variant (CODA9 family, feasibility unverified); H.265 (WAVE420L) needs a new stateful V4L2 driver or a wave5 backport of WAVE4 register semantics (not present upstream); JPEG needs a new m2m driver. Codec is out of scope for display/camera MVP.
+  -
+    topic: TPU/NPU: drivers/accel framework
+    finding: drivers/accel exists as a DRM-based compute accelerator framework with /dev/accel/accel* (major 261) and current drivers amdxdna, ethosu (2017 lines), habanalabs, ivpu, qaic, rocket (1318 lines, small NPU example).
+    evidence: ls drivers/accel -> amdxdna drm_accel.c ethosu habanalabs ivpu qaic rocket; Documentation/accel/introduction.rst:60-70 (separate major 261, /dev/accel/accel*, /sys/class/accel); wc -l drivers/accel/rocket/*.c 1318, ethosu/*.c 2017.
+    confidence: verified
+    implication_for_port: The osdrv tpu misc driver (custom ioctl + ION) would be re-homed as a drivers/accel driver using drm_gem_dma/shmem buffers; DRM's open-source-userspace requirement would apply (policy, unverified from tree text). Not required for display/camera.
+  -
+    topic: Mailbox/remoteproc: cv1800-mailbox vs osdrv rtos_cmdqu
+    finding: Mainline cv1800-mailbox.c (219 lines) implements the same hardware the osdrv rtos_cmdqu uses: 8 channels x 8-byte messages at context offset 0x400, threaded IRQ, compatible sophgo,cv1800b-mailbox. osdrv additionally uses a hardware spinlock block at mailbox base+0xc0 and pokes the C906L PC register at 0x1901070 to detect the FreeRTOS core. Mainline has no hwspinlock driver and no remoteproc driver for Sophgo/C906 (drivers/remoteproc contains 52 entries, none matching sophgo/cv18/c906/thead), and no mailbox DT node in cv180x.dtsi.
+    evidence: drivers/mailbox/cv1800-mailbox.c:21-31 MAILBOX_MAX_CHAN 8, MAILBOX_MSG_LEN 8, MAILBOX_CONTEXT_OFFSET 0x0400; :55-74 ISR; :157 compatible; :184-188 platform_get_irq/devm_request_threaded_irq; binding yaml:13-17, 55-56; osdrv interdrv/v2/rtos_cmdqu/cvi_mailbox.h:67-69 MAILBOX_MAX_NUM 8, MAILBOX_CONTEXT_OFFSET 0x400; rtos_cmdqu.c:228-230, :580 spinlock_base(reg_base + 0xc0), :630 compatible cvitek,rtos_cmdqu; cvi_spinlock.c:45 ioremap(0x1901070,4); grep -rliE 'sophgo|cv18|c906|thead' drivers/remoteproc -> empty; ls drivers/hwspinlock | grep sophgo -> empty.
+    confidence: verified
+    implication_for_port: rtos_cmdqu's transport can be replaced by the mainline mailbox client API plus a small hwspinlock driver; a remoteproc driver for the C906L (firmware load/start) is missing but optional if U-Boot/OpenSBI boots the RTOS. Only needed if the camera fast-boot/RTOS pipeline (fast_image) is kept.
+tables:
+  -
+    title: SG2000 multimedia blocks: mainline 7.3 already has vs missing
+    markdown: | Block (osdrv module) | Mainline already has (file evidence) | Missing in mainline | Nearest reference driver(s) |
+|---|---|---|---|
+| Clock tree for VIP/VC (all modules) | clk-cv1800.c gates/muxes for ISP/SC/DISP/DSI/CSI/DWA/IVE/BT/H264C/H265C/JPEG/TPU (clk-cv1800.c:627-771, 844-850; sophgo,cv1800.h:99-161) | VIP_SYS sub-controller (dividers, per-IP resets, AXI offline) used by osdrv vip_sys_reg_write_mask (vi.c:2489, dwa_platform.c:272, cvi_ive_platform.c:3817) | drivers/soc/sophgo/*topsys* style syscon |
+| Reset | reset-simple 'sophgo,cv1800b-reset' (reset-simple.c:154); RST_VIPSYS/VCSYS/H264C/H265C/JPEG/TPU/VIP_CAM0 (cv18xx-reset.h) | per-IP resets inside VIP_SYS | - |
+| CMO / non-coherent DMA | ERRATA_THEAD_CMO ops (errata/thead/errata.c:74-125), dma-noncoherent in sg2000.dtsi:21 | ERRATA_THEAD not enabled in any riscv config; arch_sync_dma_* not exported (dma-noncoherent.c) | use dma_sync_* (kernel/dma/mapping.c:393-444) |
+| Memory allocator (sys/base, ION) | dma-buf system + CMA heaps, one heap per 'shared-dma-pool'+'reusable' region (cma_heap.c:397-421; contiguous.c:77-84, 505-515) | carveout heap; in-kernel heap alloc API; CMA/DMABUF_HEAPS in riscv defconfig; reserved-memory nodes in DTS | - |
+| CIF / MIPI CSI-2 RX + D-PHY RX (cif) | V4L2 subdev streams API, vb2 | driver, binding, DT node (no cadence/synopsys IP match in osdrv cif) | cdns-csi2rx.c 1113 L, imx-mipi-csis.c 1637 L, dw-mipi-csi2rx.c 1063 L, sun6i_mipi_csi2.c 771 L |
+| VI / ISP (vi) | generic ISP params/stats uAPI v4l2-isp.h + v4l2-isp.c + v4l2-isp.rst; metafmt docs | driver, binding, DT, libcamera IPA/3A | rkisp1 (12.3k L), mali-c55 (5.5k L), c3 isp (4.1k L), rppx1 (2.8k L), pisp_be (1.8k L) |
+| VPSS scaler/CSC (vpss) | V4L2 m2m framework | driver | rockchip/rga 2345 L |
+| DWA / LDC dewarp (dwa) | V4L2 m2m framework | driver | nxp/dw100 1737 L |
+| IVE (ive) | - | driver (no comparable upstream class; possibly drivers/accel or m2m) | - |
+| RGN overlay (rgn) | DRM planes / V4L2 OSD | driver (would fold into DRM planes / VPSS) | - |
+| VO display engine (vo, fb) | drm_simple_kms_helper, drm_gem_dma, drm_fbdev_dma, drm_client_setup | DRM driver, binding, DT; fbdev port not upstreamable (drm-kms-helpers.rst:22) | imx-lcdc 534 L, mxsfb 2327 L, sprd 2441 L |
+| MIPI DSI TX + D-PHY TX (vpss/dsi_phy, cvitek,mipi_tx) | drm_mipi_dsi host API (drm_mipi_dsi.h:90-97), 106 DSI panels, phy-mipi-dphy helpers | DSI host driver + PHY driver + binding | sun6i_mipi_dsi.c 1265 L, sprd_dsi.c 1066 L, mtk_dsi.c 1331 L |
+| HDMI via LT8912B bridge | lontium-lt8912b.c 842 L + binding | nothing (board DT wiring only) | - |
+| H.264 CODA980 (vcodec) | coda driver for DX6/HX4/7541/960 (coda.h:50-53) | CODA980 variant | chips-media/coda |
+| H.265 WAVE420L (vcodec) | wave5 for WAVE5xx only (wave5-vpuconfig.h:11-18) | any WAVE4 support | chips-media/wave5 |
+| JPEG (jpeg) | coda-jpeg.c (CODA9 MJPEG), nxp/imx-jpeg, hantro JPEG enc | CODAJ12/CVITEK JPU driver | nxp/imx-jpeg |
+| TPU (tpu) | drivers/accel framework (introduction.rst:60-70) | driver | accel/rocket 1318 L, accel/ethosu 2017 L |
+| Mailbox / RTOS cmd queue (rtos_cmdqu) | cv1800-mailbox.c 219 L + binding | DT node, hwspinlock driver (osdrv rtos_cmdqu.c:580), remoteproc for C906L | - |
+| DTS / bindings | 25 sophgo bindings, sg2000.dtsi/sg2000-milkv-duo-s.dts base nodes | all media/display nodes and bindings; reserved-memory CMA pools | - |
+  -
+    title: Reference driver sizes in mainline 7.3 (lines of C) for effort analogies
+    markdown: | Area | Driver | Lines | Path |
+|---|---|---|---|
+| CSI-2 RX | Cadence CSI2RX | 1113 | drivers/media/platform/cadence/cdns-csi2rx.c |
+| CSI-2 RX | NXP MIPI CSIS | 1637 | drivers/media/platform/nxp/imx-mipi-csis.c |
+| CSI-2 RX | Synopsys DW CSI2RX | 1063 | drivers/media/platform/synopsys/dw-mipi-csi2rx.c |
+| Capture IF | Rockchip CIF/VICAP | 3180 | drivers/media/platform/rockchip/rkcif/ |
+| ISP | Rockchip rkisp1 (all) | 12317 | drivers/media/platform/rockchip/rkisp1/ |
+| ISP | Arm Mali-C55 | 5482 | drivers/media/platform/arm/mali-c55/ |
+| ISP | Amlogic C3 ISP | 4054 | drivers/media/platform/amlogic/c3/isp/ |
+| ISP | Dreamchip RPPx1 | 2796 | drivers/media/platform/dreamchip/rppx1/ |
+| ISP | Raspberry Pi PiSP BE | 1796 | drivers/media/platform/raspberrypi/pisp_be/pisp_be.c |
+| Scaler m2m | Rockchip RGA | 2345 | drivers/media/platform/rockchip/rga/ |
+| Dewarp m2m | NXP DW100 | 1737 | drivers/media/platform/nxp/dw100/dw100.c |
+| DSI host | Allwinner sun6i | 1265 | drivers/gpu/drm/sun4i/sun6i_mipi_dsi.c |
+| DSI host | Unisoc sprd | 1066 | drivers/gpu/drm/sprd/sprd_dsi.c |
+| DSI host | MediaTek | 1331 | drivers/gpu/drm/mediatek/mtk_dsi.c |
+| Simple DRM | i.MX LCDC | 534 | drivers/gpu/drm/imx/lcdc/imx-lcdc.c |
+| Simple DRM | MXSFB | 2327 | drivers/gpu/drm/mxsfb/ |
+| Simple DRM + DSI | Unisoc sprd (all) | 2441 | drivers/gpu/drm/sprd/ |
+| Bridge | Lontium LT8912B | 842 | drivers/gpu/drm/bridge/lontium-lt8912b.c |
+| Mailbox | CV1800 | 219 | drivers/mailbox/cv1800-mailbox.c |
+| NPU accel | Rockchip rocket | 1318 | drivers/accel/rocket/ |
+| NPU accel | Arm Ethos-U | 2017 | drivers/accel/ethosu/ |
+  -
+    title: Effort estimate (engineer-weeks, estimate only) to reach mainline-style display + camera on SG2000 using the surveyed infrastructure
+    markdown: | Work item | Range (eng-weeks) | Assumptions |
+|---|---|---|
+| Platform plumbing: enable ERRATA_THEAD/CMA/DMABUF_HEAPS, reserved-memory pools, mailbox + VIP_SYS syscon nodes, VIP_SYS clock/reset provider, bindings | 2-4 | VIP_SYS register map recoverable from osdrv headers; no silicon surprises |
+| DRM display driver (CRTC/plane for disp engine, DSI host, D-PHY TX), fbdev emulation, LT8912B + DSI panel bring-up on Duo S | 6-12 | Register sequences taken from osdrv vo/vpss dsi code; single output first; BT656/LVDS later |
+| CSI-2 RX + D-PHY RX subdev driver (cif) | 3-6 | One sensor (e.g. GC2083/OV5647 class already in drivers/media/i2c) used for validation |
+| ISP V4L2 driver (vi) with v4l2-isp.h params/stats, media-controller graph, vb2 capture | 10-20 | ISP block register layout fully visible in osdrv vi HAL; parameters exposed raw, no kernel 3A |
+| libcamera pipeline handler + IPA (3A) for CVITEK ISP | 12-24 | Vendor 3A algorithms not reusable (likely closed userspace lib); AE/AWB/AF rewritten |
+| VPSS and DWA as V4L2 m2m devices | 4-8 | Modelled after rga/dw100; no RGN overlay |
+| Upstream review cycles for bindings + 3 new subsystems | 8-16 (calendar-overlapping) | Typical 3-6 review rounds per driver on linux-media/dri-devel |
+| Out of scope here: codec (CODA980/WAVE420L/JPEG), TPU, IVE, remoteproc | not estimated | Separate workstreams |
+open_questions:
+  - Exact VIP_SYS sub-controller base address and register map: CONTEXT says 0x0a0c8000 but no #define for REG_VIP_SYS_BASE/VIP_SYS_BASE was found in interdrv/v2/base, dwa or include during this survey; needs a targeted read of interdrv/v2/base/chip/cv181x headers and the vendor register manual.
+  - Is the CV181x CSI-2 RX / D-PHY a licensed IP (Cadence, Synopsys, other) or CVITEK-proprietary? osdrv cif has no vendor identifiers; if licensed, an existing mainline subdev could be adapted.
+  - Can CODA980 be supported by extending the coda driver (CODA9 family like CODA960), and is the SG2000 JPEG core a Chips&Media CODAJ12? Both unverified; osdrv only shows C&M-style jpu_* API and product code 0x9800.
+  - Does Documentation/devicetree/bindings/reset/sophgo,sg2042-reset.yaml enumerate 'sophgo,cv1800b-reset' (driver match exists at reset-simple.c:154; yaml compatibles not read)?
+  - Where do the vendor ISP 3A algorithms live (userspace libisp in the SDK middleware, not in osdrv?) and under what license - determines whether a libcamera IPA can be derived or must be written from scratch.
+  - Is the in-tree 'no new fbdev drivers' policy stated anywhere besides mailing lists? Not found in Documentation/ or MAINTAINERS; treated as list policy (unverified).
+  - Does the DRM accel open-source-userspace requirement (policy) apply to a TPU driver whose compiler/runtime is closed? Relevant only if TPU is in scope.
+  - Whether the C906L FreeRTOS core is needed for the camera MVP (fast_image/rtos_cmdqu); if yes, a remoteproc + hwspinlock driver is required in addition to cv1800-mailbox.

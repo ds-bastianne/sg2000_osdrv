@@ -1,0 +1,298 @@
+Phase-1 reader report: codec-others (generated 2026-10-06; evidence as file:line in the named repository; see docs/sg2000-kernel-port-plan.md)
+
+scope: Survey of the non-camera/non-display osdrv modules in /home/user/sg2000_osdrv/interdrv/v2 (paths below are relative to that directory unless absolute): vcodec, jpeg, cvi_vc_drv (H.264/H.265/JPEG stack), rgn, dwa, ive, tpu, mon, rtos_cmdqu, fast_image, pwm, rtc, wdt, saradc, clock_cooling, wiegand. Compared against vendor Linux 5.10 (/home/user/sg2000_linux_5.10) and mainline 7.3-rc6 (/home/user/mainline_linux). Depth: structural survey (interfaces, deps, LOC, mainline fit, port options); not a line-by-line review. Effort figures are engineer-weeks with stated assumptions; nothing is costed in money.
+kernel_interface: All surveyed modules expose custom char devices + ioctls (no V4L2, DRM, IIO, PWM, RTC or watchdog framework use except pwm/rtc/wdt/clock_cooling which do use the frameworks but with vendor compatibles). Per module: cvi_vc_driver.ko -> class "cvi_vc_drv" (cvi_vc_drv/cvi_vc_drv.h:17), cdevs "cvi_vc_enc<N>" x16 and "cvi_vc_dec<N>" x64 (cvi_vc_drv.c:1371-1433; VENC_MAX_CHN_NUM 16 / VDEC_MAX_CHN_NUM 64 in include/chip/cv181x/uapi/linux/cvi_defines.h:69,113), 81 ioctls in include/common/uapi/linux/cvi_vc_drv_ioctl.h, proc entries VENC_PROC_NAME and CODEC_PROC_NAME (cvi_vc_drv_proc.c:679,857). vcodec.ko -> class/cdev "vcodec" (vcodec/cvi_vcodec.c:57-60), 17 legacy VDI ioctls (cvi_vc_drv/vcodec/vdi/linux/driver/vcodec.h), ~20 EXPORT_SYMBOL vpu_* for cvi_vc_driver (cvi_vcodec.c:463-944). jpeg.ko -> class/cdev "jpu" (jpeg/cvi_jpeg.c:47,519), 16 ioctls (cvi_vc_drv/jpeg/jdi/linux/driver/jpu.h), exports jpu_* (cvi_jpeg.c:139-341). rgn -> misc "cvi-rgn", 2 ioctls RGN_IOC_G_CTRL/S_CTRL with 4 sub-ids (include/chip/cv181x/uapi/linux/rgn_uapi.h), proc RGN_PROC_NAME. dwa -> misc "cvi-dwa", 7 ioctls (dwa_uapi.h: BEGIN/END/CANCEL_JOB, ADD_ROT_TASK, ADD_LDC_TASK, SET/GET_BUF_WRAP), 1 mmap, proc GDC + ldc_test. ive -> cdev "cvi-ive", 47 ioctls (include/common/uapi/linux/cvi_ive_ioctl.h), proc ive/hw_profiling. tpu -> cdev "cvi-tpu%d", 13 ioctls (cvi_tpu_ioctl.h) incl. dma-buf submit, cache flush/invalidate by physical address and a TEE submit path (tpu/common/cvi_tpu_interface.c:457-497, 959-993), proc usage_profiling. mon -> cdev "cvi-mon%d", proc bw_profiling/mon_profiling/profiling_window_ms, no uapi ioctls. rtos_cmdqu -> misc "cvi-rtos-cmdqu", 5 ioctls (rtos_cmdqu/rtos_cmdqu.h:76-80), exports request_rtos_irq/free_rtos_irq/rtos_cmdqu_send (rtos_cmdqu.c:86,111,252). fast_image -> misc "cvi-fast-image", 28 ioctls (fast_image/fast_image.h). saradc -> cdev "cvi-saradc%d" with private ioctl header. wiegand -> cdev "cvi-wiegand%d", 7 ioctls (wiegand/cvi_wiegand_ioctl.h). pwm/rtc/wdt/clock_cooling -> standard pwm/rtc/watchdog/thermal-cooling class devices.
+hw_blocks:
+  - Chips&Media CODA980 H.264 codec core (product code 0x9800, cvi_vc_drv/vcodec/vpuapi/vpuconfig.h:26; CORE_H264 -> Coda9VpuGetProductId, vpuapi/product.c:47-48)
+  - Chips&Media WAVE420L HEVC core (product code 0x4201, vpuconfig.h:31; CORE_H265 -> WaveVpuGetProductId, product.c:45-46; MAX_NUM_VPU_CORE 2, vpuconfig.h:51)
+  - Chips&Media CODAJ12-class JPEG codec ('NIEUPORT REGISTERS', NPT_ register prefix, cvi_vc_drv/jpeg/jpuapi/regdefine.h:7-18) - identification as CODAJ12 is likely, not verified by a product-ID register
+  - VC stream-buffer-manager 'vc_sbm' and 'vc_addr_remap' side blocks (vcodec/cvi_vcodec.c:1357-1391, irq 'sbm' :1426; cvi_vc_drv.c probe byname vc_ctrl/vc_sbm/vc_addr_remap)
+  - DWA/LDC lens-distortion-correction & rotation engine (dwa/common/dwa_platform.c:25 'ldc.h', :378 ldc_set_base_addr)
+  - IVE intelligent-video-engine (vision ops: filters, morphology, Sobel/Canny, CCL, GMM, LK optical flow, SAD, CMDQ; ive/hal/cv181x/builder generated register headers)
+  - TPU neural accelerator = TIU + TDMA (reg byname 'tdma','tiu', tpu/common/cvi_tpu_interface.c:1160-1167; tpu/hal/cv181x/reg_tiu.h, reg_tdma.h)
+  - AXI/DDR performance monitor (regs pcmon, ddr_ctrl, ddr_phyd, ddr_aximon, mon/common/cvi_mon_interface.c:471-492)
+  - Inter-core mailbox to C906L FreeRTOS core + hardware spinlock at mailbox+0xc0 (rtos_cmdqu/cvi_mailbox.h:49-69, rtos_cmdqu.c:580, cvi_spinlock.c:62-94) and C906L PC register 0x1901070 (cvi_spinlock.c:45)
+  - PWM (HLPERIOD/PERIOD per channel stride 8, POLARITY 0x40, PWMSTART 0x44, OE 0xD0, pwm/cv181x/cvi_pwm.c:15-28)
+  - RTC macro with power-wakeup/POR/calibration regs (rtc/cv181x/cvi_rtc.c:22-44)
+  - Synopsys DesignWare watchdog (wdt/cv181x/cvi_wdt.c:36-46, compatible snps,dw-wdt) plus CV_TOP reset register poke (cvi_wdt.c:49-52)
+  - SARADC with eFuse trim (saradc/cv181x/cvi_saradc.c:45-48, 107-150)
+  - Wiegand TX/RX controller (wiegand/cvi_wiegand.c:91-164)
+dt_expectations:
+  compatibles:
+    - cvitek,cvi_vc_drv (cvi_vc_drv/cvi_vc_drv.c:14)
+    - cvitek,asic-vcodec | cvitek,pxp-vcodec | cvitek,fpga-vcodec (vcodec/hal/cv181x/cvi_vcodec_cfg.c:65-67)
+    - cvitek,asic-jpeg | cvitek,pxp-jpeg | cvitek,fpga-jpeg (jpeg/hal/cv181x/cvi_jpeg_cfg.c:55-58)
+    - cvitek,rgn (rgn/common/rgn_core.c)
+    - cvitek,dwa (dwa/common/dwa_platform.c)
+    - cvitek,ive (ive/common/cvi_ive_interface.c)
+    - cvitek,tpu (tpu/common/cvi_tpu_interface.c)
+    - cvitek,mon (mon/common/cvi_mon_interface.c)
+    - cvitek,rtos_cmdqu (rtos_cmdqu/rtos_cmdqu.c)
+    - cvitek,rtos_image (fast_image/fast_image.c; also looks up cvitek,vi / cvitek,asic-vcodec / cvitek,asic-jpeg nodes)
+    - cvitek,cvi-pwm (pwm/cv181x/cvi_pwm.c)
+    - cvitek,rtc (rtc/cv181x/cvi_rtc.c:250)
+    - snps,dw-wdt (wdt/cv181x/cvi_wdt.c)
+    - cvitek,saradc (saradc/cv181x/cvi_saradc.c)
+    - cvitek,cv181x-cooling | cvitek,cv180x-cooling (clock_cooling/*/clock_cooling.c)
+    - cvitek,wiegand (wiegand/cvi_wiegand.c)
+  reg_names_or_count: vcodec: reg index 0,1 (H265/H264 cores), index 2, plus reg-names vc_addr_remap, vc_sbm (vcodec/cvi_vcodec.c:1318-1378); cvi_vc_drv: reg-names vc_ctrl, vc_sbm, vc_addr_remap (cvi_vc_drv.c probe ~1451-1500); jpeg: reg index 0,1 (jpeg/cvi_jpeg.c:370,393); dwa: 1 reg (dwa_platform.c:363); ive: 1 reg (cvi_ive_interface.c:855); tpu: reg-names tdma, tiu (cvi_tpu_interface.c:1160,1167); mon: reg-names pcmon, ddr_ctrl, ddr_phyd, ddr_aximon (cvi_mon_interface.c:471-492); rtos_cmdqu: 1 reg = mailbox base (rtos_cmdqu.c:549); rgn: none (pure software); pwm/rtc/wdt/saradc/wiegand: 1 reg each. Actual addresses are NOT recoverable from either kernel repo (board DTS lives in the SDK 'build' repo).
+  clock_names:
+    - vcodec: clk_axi_video_codec, clk_h264c, clk_apb_h264c, clk_h265c, clk_apb_h265c, clk_vc_src0, clk_vc_src1, clk_vc_src2, clk_cfg_reg_vc (vcodec/vcodec_common.c:25-65) - all have provider IDs in mainline include/dt-bindings/clock/sophgo,cv1800.h (CLK_AXI_VIDEO_CODEC, CLK_H264C, CLK_APB_H264C, CLK_H265C, CLK_APB_H265C, CLK_VC_SRC0/1/2, CLK_CFG_REG_VC verified present)
+    - jpeg: clk_axi_video_codec, clk_jpeg, clk_apb_jpeg, clk_vc_src0/1/2, clk_cfg_reg_vc (jpeg/jpeg_common.c:20-44) - CLK_JPEG, CLK_APB_JPEG present in mainline header
+    - dwa: clk_dwa + clk_sys_0..clk_sys_4 (dwa_platform.c:40,244) - CLK_DWA_VIP present; no CLK_SYS_0 in mainline header (mapping unverified)
+    - tpu: clk_tpu_axi, clk_tpu_fab (tpu) - mainline has CLK_TPU and CLK_TPU_FAB (no CLK_TPU_AXI name; consumer name is DT-local)
+    - saradc: clk_saradc (CLK_SARADC present)
+    - wiegand: clk_wgn, clk_wgn1 (CLK_WGN, CLK_WGN1 present)
+    - pwm, rtc, wdt: unnamed single clock (devm_clk_get(dev, NULL)); mainline has CLK_PWM, CLK_RTC_25M
+    - clock_cooling: clk_cpu, clk_tpu_axi (clock_cooling.c) - no CLK_CPU in mainline header; mainline has CLK_A53
+    - ive: no clock requested in driver (uses vip_sys register bits + RST_IVE via base module)
+  irq_names:
+    - vcodec: h265, h264, sbm (vcodec/cvi_vcodec.c:1426)
+    - jpeg: index 0 'JPU_CODEC_IRQ' (cvi_jpeg.c:445-454)
+    - dwa: 'dwa' (dwa_platform.c:351)
+    - ive: index 0
+    - tpu: index 1 ('cvi-tpu-tdma', cvi_tpu_interface.c:1174-1181)
+    - mon: index 0 (aximon)
+    - rtos_cmdqu: 'mailbox' (platform_get_irq_byname)
+    - rtc, saradc, wiegand: index 0
+    - fast_image: irq_byname from vi/vcodec/jpeg nodes
+  reset_handling: tpu: reset-names res_tdma, res_tpu, res_tpusys via devm_reset_control_get (mainline cv18xx-reset.h has RST_TPU, RST_TDMA, RST_TPUSYS); saradc: res_saradc (RST_SARADC present); wiegand: res_wgn (mainline has RST_WGN0/1/2); wdt: optional shared reset + direct write to CV_TOP+0x3004 (cvi_wdt.c:49-52); vcodec/jpeg: no reset controller use (mainline has RST_H264C/H265C/JPEG available); dwa/ive: soft reset through base module vip_sys_reset()/vip_sys_reg_write_mask (dwa_platform.c:272; ive uses RST_IVE bit via vip_sys) - no RST_IVE/RST_DWA in mainline reset header, consistent with VIP-internal reset.
+  reserved_memory_or_ion: vcodec: 'memory-region' phandle -> of_reserved_mem_lookup -> private vmem allocator for VPU work/firmware memory (vcodec/cvi_vcodec.c:1519-1552, 313); jpeg: same pattern with jmem (jpeg/cvi_jpeg.c:27,466). Frame/bitstream buffers: ION carveout via sys.ko (sys_ion_alloc_nofd/sys_ion_free_nofd in cvi_vc_drv/vcodec/vdi/linux/vdi.c:1886,1973 and vdi_osal.c:304,321), compiled with -DCVI_H26X_USE_ION_MEM -DCVI_JPG_USE_ION_MEM -DCVI_H26X_USE_ION_FW_BUFFER (cvi_vc_drv/Makefile:91; 41 ifdef sites). rgn, ive, fast_image also call sys_ion_alloc/free. Mainline 7.3 has no ION; only drivers/dma-buf/heaps/{cma_heap.c,system_heap.c}. sg2000.dtsi sets dma-noncoherent (arch/riscv/boot/dts/sophgo/sg2000.dtsi:21).
+  gpios_and_misc_props:
+    - pwm: 'pwm-num', 'no-polarity' (pwm/cv181x/cvi_pwm.c)
+    - clock_cooling: 'dev-freqs' table
+    - fast_image: cross-references cvitek,vi / cvitek,asic-vcodec / cvitek,asic-jpeg nodes
+    - tpu Makefile adds -I$(srctree)/drivers/tee (tpu/Makefile:8); cvi_vc_drv Makefile adds -I$(srctree)/drivers/tee and -I$(srctree)/drivers/staging/android (cvi_vc_drv/Makefile:86-87)
+    - Mainline DTS for cv18xx/sg2000 currently has NO nodes for mailbox, watchdog, pwm, vcodec, jpeg, tpu, ive, dwa (verified by grep over cv180x.dtsi, cv181x.dtsi, sg2000.dtsi, sg2002.dtsi and board files); it does have rtc@5025000 'sophgo,cv1800b-rtc' (cv180x.dtsi:469-470) and adc 'sophgo,cv1800b-saradc' (cv180x.dtsi:164)
+depends_on_modules:
+  - cvi_vc_driver.ko -> vcodec.ko (vpu_* exports) + jpeg.ko (jpu_* exports) + sys.ko (sys_ion_*) + base.ko (KBUILD_EXTRA_SYMBOLS sys/base/vcodec/jpeg, cvi_vc_drv/Makefile:107-110)
+  - rgn.ko -> base.ko + sys.ko + vpss.ko (rgn/Makefile symvers; uses vpss_chn_cfg, vpss_cb, sys_get_vpssmode, sys_ion_alloc/free)
+  - dwa.ko -> base.ko (vip_sys_reg_read/write_mask exported in base/chip/cv181x/vip_sys.c:98,104; vip_sys_reset; base_get_frame_info) + sys.ko + vpss.ko (vpss_sdm_cb_done, vpss_grp_sbm_cfg)
+  - ive.ko -> sys.ko (sys_ion_alloc/free) + base.ko (vip_sys_reg_write_mask)
+  - fast_image.ko -> rtos_cmdqu.ko (rtos_cmdqu_send_wait) + sys.ko (sys_ion_*) + vendor-kernel ION header ion/cvitek/cvitek_ion_alloc.h
+  - rtos_cmdqu.ko -> base.ko symvers (rtos_cmdqu/Makefile)
+  - sys.ko itself -> vendor-kernel ION: cvi_ion_alloc_nofd / cvi_ion_alloc (sys/common/sys.c:57,126) exported by /home/user/sg2000_linux_5.10/drivers/staging/android/ion/cvitek/cvitek_ion_alloc.c:90-116
+  - tpu.ko -> vendor-kernel exported arch_sync_dma_for_device (sg2000_linux_5.10/arch/riscv/mm/dma-mapping.c:45,61) + optional OP-TEE client path + 'ion.h'
+  - vcodec.ko / jpeg.ko -> only core kernel (of_reserved_mem, clk, irq); vendor DTS nodes required
+  - tpu, mon, pwm, rtc, wdt, saradc, clock_cooling, wiegand -> no osdrv inter-module deps (no KBUILD_EXTRA_SYMBOLS)
+vendor_kernel_only_deps:
+  -
+    symbol_or_header: sys_ion_alloc / sys_ion_alloc_nofd / sys_ion_free / sys_ion_free_nofd (osdrv sys.ko wrappers over vendor ION carveout heap)
+    call_sites: 32
+    evidence: Exported sys/common/sys.c:302-338 (EXPORT_SYMBOL_GPL); implemented on cvi_ion_alloc_nofd/cvi_ion_alloc (sys.c:57,126). Callers: cvi_vc_drv/vcodec/vdi/linux/vdi.c:1886,1973; vdi_osal.c:304,321 (osal_ion_alloc/free used by cvi_vc_drv.c:1180-1199, cvi_enc_internal.c:641-713); rgn 11 refs; ive 8; fast_image 6. Total ion_alloc/ion_free/ion_phys/dma_buf_get regex hits across surveyed modules: 66.
+    replacement_in_mainline: dma-buf heaps (drivers/dma-buf/heaps/cma_heap.c) + of_reserved_mem/CMA; kernel-internal allocation via dma_alloc_coherent/dma_alloc_attrs or a small in-kernel dma-heap client; userspace passes dma-buf fds instead of physical addresses.
+  -
+    symbol_or_header: cvi_ion_alloc_nofd / cvi_ion_alloc / cvi_ion_free(_nofd) and headers ion/ion.h, ion/cvitek/cvitek_ion_alloc.h (vendor-kernel staging ION)
+    call_sites: 9
+    evidence: /home/user/sg2000_linux_5.10/drivers/staging/android/ion/cvitek/cvitek_ion_alloc.c:90-116 exports; includes counted in surveyed modules: 4x "ion/ion.h", 4x "ion/cvitek/cvitek_ion_alloc.h", 1x "ion.h" (tpu/common/cvi_tpu_interface.c:52, fast_image/fast_image.c:28). cvi_vc_drv/Makefile:87 and vcodec/Makefile add -I$(srctree)/drivers/staging/android.
+    replacement_in_mainline: ION removed in 5.11; mainline 7.3 has drivers/dma-buf/heaps only (verified ls). Replace with dma-heaps + dma-buf import (dma_buf_get/attach/map_attachment).
+  -
+    symbol_or_header: arch_sync_dma_for_device / __dma_map_area (explicit cache maintenance by physical address)
+    call_sites: 6
+    evidence: tpu/common/cvi_tpu_interface.c:970,991 (arch_sync_dma_for_device under riscv/5.10 ifdef) and :972,:993 (__dma_map_area fallback); vendor export at sg2000_linux_5.10/arch/riscv/mm/dma-mapping.c:45,61 (EXPORT_SYMBOL_GPL). Mainline exports only __dma_sync_single_for_cpu/__dma_sync_single_for_device (kernel/dma/mapping.c:393,410); arch_sync_dma_* is not exported.
+    replacement_in_mainline: dma_sync_single_for_device/for_cpu on mapped dma-bufs (dma_buf_map_attachment / dma_buf_end_cpu_access); T-Head CMO via CONFIG_ERRATA_THEAD_CMO (arch/riscv/Kconfig.errata:120) handles non-coherent SG2000 per dma-noncoherent DT property.
+  -
+    symbol_or_header: vip_sys_reg_read / vip_sys_reg_write_mask / vip_sys_reset (osdrv base.ko VIP-sys syscon access)
+    call_sites: 7
+    evidence: base/chip/cv181x/vip_sys.c:94-104 (EXPORT_SYMBOL_GPL); users dwa/common/dwa_platform.c:272-273 (VIP_SYS_VIP_CLK_CTRL1 bit 20), dwa vip_sys_reset (1), ive vip_sys_reg_write_mask (2) + vip_sys_reg_read (1).
+    replacement_in_mainline: syscon/regmap on a VIP-sys node, or model the VIP clock gates/resets as clk/reset providers (mainline clk-cv1800 already provides CLK_DWA_VIP, CLK_IVE_VIP; VIP-internal soft resets have no mainline provider yet).
+  -
+    symbol_or_header: In-kernel firmware file reads via filp_open/kernel_read from /usr/share/fw_vcodec
+    call_sites: 4
+    evidence: cvi_vc_drv/vcodec/vdi/linux/vdi_osal.c:215,217 (filp_open), :240 (kernel_read); paths cvi_vc_drv/vcodec/config.h:63 (coda980.bin) and :68 (monet.bin) selected in vcodec/sample/main_enc_cvitest.c:5516-5522 and cvi/cvi_dec_internal.c:99-104. Embedded fw_h264.h (21,167 lines) / fw_h265.h (12,270 lines) exist but FIRMWARE_H is commented out (vcodec/sample/helper/main_helper.h:408).
+    replacement_in_mainline: request_firmware() from /lib/firmware; firmware redistribution licence must be clarified (see open questions).
+  -
+    symbol_or_header: OP-TEE client include path and TEE submit ioctl (TPU, codec build flags)
+    call_sites: 5
+    evidence: tpu/Makefile:8 -I$(srctree)/drivers/tee; cvi_vc_drv/Makefile:86 -I$(srctree)/drivers/tee; tpu/common/cvi_tpu_interface.c:457-497 (cvi_submit_tee_arg), tpu/hal/cv181x/tpu_platform.c:470 platform_loadcmdbuf_tee.
+    replacement_in_mainline: Mainline drivers/tee client API exists (tee_client_open_context etc.) but the private header include path must go; make the TEE path optional/Kconfig-gated or drop.
+  -
+    symbol_or_header: Hardware spinlock + C906L PC register access shared with FreeRTOS core (mailbox protocol)
+    call_sites: 3
+    evidence: rtos_cmdqu/rtos_cmdqu.c:580 spinlock_base(reg_base + 0xc0); rtos_cmdqu/cvi_spinlock.c:45 ioremap(0x1901070,4); :62-94 hw_spin_trylock/hw_spin_lock. Mainline drivers/mailbox/cv1800-mailbox.c has zero spinlock/lock references (grep count 0) although its register map (cv1800-mailbox.c:19-31) matches rtos_cmdqu/cvi_mailbox.h:49-69 exactly.
+    replacement_in_mainline: mailbox framework client (mbox_request_channel) + hwspinlock framework provider for the mailbox+0xc0 lock, or extend cv1800-mailbox.c; protocol struct cmdqu_t (rtos_cmdqu.h:56-62) must stay ABI-compatible with the RTOS firmware.
+  -
+    symbol_or_header: Vendor board DTS nodes (cvitek,* compatibles, reg/irq/clock-names/memory-region)
+    call_sites: 16
+    evidence: 16 cvitek,* compatibles listed in dt_expectations; board DTS absent from both kernel repos (context fact); mainline cv18xx DTS lacks vcodec/jpeg/tpu/ive/dwa/mailbox/wdt/pwm nodes (grep verified).
+    replacement_in_mainline: Author new DTS nodes + YAML bindings under sophgo,* namespace; addresses must come from the SDK build repo or TRM.
+userspace_contract: CVITEK MPI middleware (libvenc/libvdec, libgdc, libive, TPU runtime, region library) is required and talks to the kernel exclusively through the ioctl ABIs listed in kernel_interface (81 codec ioctls, 47 IVE, 13 TPU, 7 DWA, 2+4 RGN, 5 rtos_cmdqu, 28 fast_image, 7 wiegand). Buffer handles are ION carveout PHYSICAL ADDRESSES passed by value (sys_ion_alloc_nofd returns phys addr, cvi_vc_drv/vcodec/vdi/linux/vdi.c:1886; TPU cache ioctls take paddr, tpu/common/cvi_tpu_interface.c:959-993), so switching to dma-buf fds changes the ABI and requires middleware changes or a compatibility shim. Algorithms living in the kernel: H.264/H.265 rate control (cvi_vc_drv/vcodec/cvi/cvi_enc_rc.c 657 lines plus common/rcKernel soft-float RC objects in cvi_vc_drv/Makefile:42-44), the whole Chips&Media host API (vpuapi 20,213 compiled lines) and even C&M sample/test helper code (vcodec/sample 8,220 compiled lines, VPU_InitWithBitcode called from main_enc_cvitest.c:528) - i.e. the kernel module contains what is normally a userspace codec library. VPU firmware blobs coda980.bin and monet.bin are read by the kernel from /usr/share/fw_vcodec at channel open (not /lib/firmware). TPU: compiled cvimodel command buffers submitted via ioctl with dma-buf fds, optional OP-TEE path. rtos_cmdqu/fast_image additionally depend on the FreeRTOS firmware on the C906L core (not in any repo) speaking the 8-byte cmdqu_t protocol. Binary compatibility: RISC-V 64 only; compat_ioctl present (10 sites) but irrelevant on rv64-only userspace. Dropping pwm/rtc/wdt/saradc in favour of mainline changes userspace from /dev/cvi-saradc ioctls to IIO sysfs, and RTC/PWM/WDT to standard class devices (sysfs/pwmchip, /dev/rtc0, /dev/watchdog0).
+api_breakages_5_10_to_7_3:
+  -
+    api: ION allocator (sys_ion_* / cvi_ion_* / ion.h) and physical-address buffer ABI
+    what_changed: ION removed from staging in 5.11; mainline 7.3 has only dma-buf heaps (drivers/dma-buf/heaps/cma_heap.c, system_heap.c). 66 regex hits across surveyed modules, 41 CVI_*_USE_ION_* ifdef sites in cvi_vc_drv alone (cvi_vc_drv/Makefile:91).
+    call_sites: 66
+    fix: Replace sys.ko ION wrapper with a dma-heap/CMA-backed allocator exporting the same sys_ion_* signatures (phys addr + kernel vaddr) as a first step; longer term pass dma-buf fds through the ioctl ABI and import with dma_buf_attach/map.
+    severity: hard
+  -
+    api: arch_sync_dma_for_device / __dma_map_area for TPU cache maintenance
+    what_changed: Not exported in mainline (only __dma_sync_single_for_cpu/for_device, kernel/dma/mapping.c:393,410); __dma_map_area never existed on riscv mainline.
+    call_sites: 6
+    fix: Use dma_sync_single_for_device/for_cpu on dma-buf-mapped sg lists (dma_buf_begin/end_cpu_access); requires buffers to be dma-buf backed. tpu/common/cvi_tpu_interface.c:959-993.
+    severity: moderate
+  -
+    api: VPU firmware loading via filp_open/kernel_read
+    what_changed: In-kernel file I/O of /usr/share/fw_vcodec/*.bin (vdi_osal.c:215,240) is unacceptable upstream and fragile; set_fs/vfs_read style helpers (2 hits) are gone.
+    call_sites: 4
+    fix: request_firmware()/request_firmware_direct() from /lib/firmware with firmware-name in DT; drop the 33k-line embedded fw_h264.h/fw_h265.h headers.
+    severity: moderate
+  -
+    api: class_create(THIS_MODULE, name)
+    what_changed: Owner argument removed in 6.4; now class_create(name).
+    call_sites: 10
+    fix: Mechanical edit in ive, tpu, mon, rtos_cmdqu, fast_image, saradc, wiegand, vcodec, jpeg, cvi_vc_drv (e.g. tpu/common/cvi_tpu_interface.c:1119, cvi_vc_drv.c:1363).
+    severity: trivial
+  -
+    api: ioremap_nocache()
+    what_changed: Removed in 5.6; the code keeps it under LINUX_VERSION_CODE ifdefs (26 sites in dwa, mon, rtos_cmdqu, fast_image, wdt, vcodec, jpeg, cvi_vc_drv, vdi.c).
+    call_sites: 26
+    fix: Delete the legacy branches; use devm_ioremap_resource/devm_platform_ioremap_resource.
+    severity: trivial
+  -
+    api: platform_driver.remove returning int
+    what_changed: Converted to void return in 6.11-6.13 era; 15 'static int *_remove(struct platform_device' definitions in the surveyed set, 0 void variants.
+    call_sites: 15
+    fix: Change signatures to void and drop return codes.
+    severity: trivial
+  -
+    api: proc file_operations vs proc_ops, vma->vm_flags writes, timeval/timespec, do_gettimeofday/init_timer
+    what_changed: proc_ops mandatory since 5.6 (14 proc_ops already present, 12 legacy file_operations *proc under ifdef); vm_flags must use vm_flags_set() since 6.3 (4 sites); struct timeval/timespec (16 refs) and do_gettimeofday/getnstimeofday/init_timer/setup_timer (11 refs) are gone - all behind 116 LINUX_VERSION_CODE ifdef sites.
+    call_sites: 43
+    fix: Remove the legacy ifdef branches; use timespec64/ktime, vm_flags_set, proc_ops.
+    severity: trivial
+  -
+    api: pwm_ops legacy callbacks (.config/.enable/.disable/.set_polarity) and pwmchip embedding
+    what_changed: Legacy callbacks removed; .apply/.get_state mandatory and chips must be allocated with devm_pwmchip_alloc (mainline pwm-sophgo-sg2042.c:213-251).
+    call_sites: 17
+    fix: Do not port: add a cv18xx compatible to drivers/pwm/pwm-sophgo-sg2042.c (SG2044 register set matches cv181x: HLPERIOD/PERIOD stride 8, POLARITY 0x40, PWMSTART 0x44, OE 0xd0; pwm/cv181x/cvi_pwm.c:15-28 vs pwm-sophgo-sg2042.c:30-47).
+    severity: trivial
+  -
+    api: thermal_cooling_device_ops for clock_cooling
+    what_changed: Cooling-device API reworked (max_state cached in core since 6.2; get_max_state semantics changed); 2 register sites + 18 state-callback references. No upstream thermal sensor for cv18xx exists (drivers/thermal has no sophgo files; no thermal node in DTS).
+    call_sites: 20
+    fix: Drop; use cpufreq-dt + cpufreq cooling once a thermal zone exists upstream.
+    severity: moderate
+  -
+    api: devm_rtc_device_register / watchdog registration / dw-wdt copy
+    what_changed: devm_rtc_device_register deprecated in favour of devm_rtc_allocate_device + devm_rtc_register_device; vendor wdt is a fork of dw_wdt with a CV_TOP register poke (wdt/cv181x/cvi_wdt.c:49-52).
+    call_sites: 2
+    fix: Drop both; mainline rtc-cv1800.c + soc/sophgo/cv1800-rtcsys.c and watchdog/dw_wdt.c already exist (need DTS nodes for wdt).
+    severity: trivial
+  -
+    api: Cross-module EXPORT_SYMBOL web and KBUILD_EXTRA_SYMBOLS chains
+    what_changed: 53 EXPORT_SYMBOL sites; mainline expects either a single driver or symbol namespaces (MODULE_IMPORT_NS, 0 uses); vendor vcodec/jpeg/cvi_vc_drv split exists only for historical userspace VDI access (17+16 legacy ioctls).
+    call_sites: 53
+    fix: Collapse vcodec+jpeg+cvi_vc_drv into one module (or two: vpu and jpu); remove legacy VDI/JDI cdevs.
+    severity: moderate
+  -
+    api: OP-TEE private header include (-I drivers/tee)
+    what_changed: Private header paths of drivers/tee are not an API; TEE client API is include/linux/tee_drv.h.
+    call_sites: 2
+    fix: Kconfig-gate the TPU TEE submit path or remove it (tpu/Makefile:8, cvi_vc_drv/Makefile:86).
+    severity: trivial
+mainline_framework_fit: Codec (vcodec+jpeg+cvi_vc_drv): the right home is V4L2 stateful mem2mem (drivers/media/platform/chips-media). Mainline wave5 CANNOT drive this VPU as-is: it only knows WAVE5xx product codes (wave5-vpuconfig.h:11-18: WAVE515/517/537/511/521/521C/521E1) and compatible 'ti,j721s2-wave521c' (wave5-vpu.c:467), whereas CV181x has WAVE420L (0x4201, cvi_vc_drv/vcodec/vpuapi/vpuconfig.h:31) with a different Wave4 host interface (e.g. W4_RET_SUCCESS at 0x110 vs W5_RET_SUCCESS at 0x108; Wave4 has no command queue; vendor wave4_regdefine.h 122 W4_ defines vs 391 W5_ defines). Mainline coda driver supports CODA_DX6/HX4/7541/960 only (coda/coda.h:50-53); no 0x9800/CODA980 anywhere in coda/*.c (grep verified), though CODA980 is the CODA960 successor so extending coda-common is the most plausible route (feasibility unverified). The vendor tree contains GPL-2.0 Wave4 (wave4.c 2,612 + common.c 1,771 lines) and Coda9 (coda9.c) host-API reference code that can seed new HALs; the wave5 driver's V4L2 glue (wave5-vpu-enc.c/dec.c) is the structural template. JPEG core is CODAJ12-class ('NIEUPORT' registers, jpuapi/regdefine.h) -> V4L2 m2m JPEG codec driver, no mainline CODAJ12 driver exists. DWA/LDC -> V4L2 mem2mem (rotation/dewarp) driver; depends on VPSS/base porting for shared VIP-sys bits. RGN -> not a device; OSD belongs to the VPSS/VO port (V4L2 overlay/subdev controls or DRM planes). IVE -> no mainline framework (could be partially V4L2 m2m, realistically a custom misc/accel driver). TPU -> drivers/accel (DRM accel) with dma-buf/GEM buffers is the mainline home. rtos_cmdqu -> mailbox client over existing drivers/mailbox/cv1800-mailbox.c (identical register map, cv1800-mailbox.c:19-31 vs rtos_cmdqu/cvi_mailbox.h:49-69) plus an hwspinlock provider; or rpmsg. mon -> perf PMU/debugfs, drop. pwm -> drivers/pwm/pwm-sophgo-sg2042.c (SG2044 variant register map identical). rtc -> drivers/rtc/rtc-cv1800.c via soc/sophgo/cv1800-rtcsys.c MFD ('sophgo,cv1800b-rtc', DTS cv180x.dtsi:469). wdt -> drivers/watchdog/dw_wdt.c (needs DTS node). saradc -> drivers/iio/adc/sophgo-cv1800b-adc.c (DTS cv180x.dtsi:164). clock_cooling -> cpufreq cooling (blocked on missing thermal sensor upstream). wiegand -> no framework; small custom driver.
+port_options:
+  -
+    name: A. Lift-and-fix re-host of the accelerator stack as out-of-tree modules on 7.3 (keep ioctl ABI)
+    description: Keep cvi_vc_driver/vcodec/jpeg, dwa, ive, tpu, rgn, rtos_cmdqu, wiegand as out-of-tree modules; fix the mechanical breakages (class_create, remove(), ioremap_nocache, proc_ops, vm_flags, time APIs, void remove), replace ION with a dma-heap/CMA-backed sys_ion_* shim preserving phys-addr semantics, switch VPU firmware to request_firmware, replace arch_sync_dma_* in tpu with dma_sync on dma-bufs, rewrite rtos_cmdqu as mailbox-framework client, author DTS nodes for all devices, collapse vcodec+jpeg+cvi_vc_drv into one module. Drop mon, fast_image, clock_cooling, pwm, rtc, wdt, saradc in favour of mainline (pwm needs a compatible patch; wdt/mailbox/pwm need DTS nodes).
+    effort_engineer_weeks: 17-31 total: codec stack 6-12, tpu 3-5, ive 2-4, dwa 2-3, rtos_cmdqu 2-3, rgn 1-2 (after VPSS exists), small-module drop/DTS/pwm compatible 1-2
+    assumptions: ION-to-dma-heap replacement in sys/base is done once and shared with the camera/display ports; vendor board DTS addresses recovered from SDK build repo or TRM; existing CVITEK middleware is rebuilt against the unchanged ioctl ABI; hardware available for regression; no upstream submission; VPU firmware blobs usable as-is.
+    risks:
+      - Phys-address ABI retention keeps userspace tied to carveout memory; no IOMMU anyway on SG2000 (unverified) so acceptable but non-upstreamable
+      - Kernel contains C&M sample/test code on the real encode path (main_enc_cvitest.c:528) - fragile to refactor
+      - Firmware redistribution licence for coda980.bin/monet.bin unclear
+      - T-Head non-coherent DMA: mixing dma-noncoherent attribute with phys-addr cache ops in tpu/vcodec may expose coherency bugs
+      - rtos_cmdqu HW spinlock semantics shared with FreeRTOS firmware must be reproduced exactly
+  -
+    name: B. New upstream-quality V4L2 stateful codec driver (Wave4 HEVC + CODA980 H.264 + CODAJ12 JPEG)
+    description: Write drivers/media/platform/chips-media/wave4 (or extend wave5 with a Wave4 HAL) for WAVE420L, extend the coda driver with CODA980 (or a sibling), and a V4L2 m2m JPEG driver for the CODAJ12 core; firmware via request_firmware; buffers via videobuf2-dma-contig over a CMA reserved region; rate control moved to firmware/userspace where possible. Userspace switches to standard V4L2 (GStreamer/FFmpeg), dropping the CVITEK MPI venc/vdec libraries.
+    effort_engineer_weeks: 30-55: Wave4 HEVC enc(/dec if supported) 12-20, CODA980 H.264 enc/dec 10-18, CODAJ12 JPEG 6-10, v4l2-compliance + review cycles 2-7
+    assumptions: GPL Wave4/Coda9/JPU reference code in cvi_vc_drv may be used as documentation; Chips&Media register documentation available or inferable; firmware redistribution cleared with Sophgo; SBM/addr-remap side blocks not required for baseline operation; no cross-core (RTOS) codec sharing.
+    risks:
+      - CODA980 register/command delta vs CODA960 unknown (unverified) - may require a separate driver
+      - Rate-control quality regression if the kernel RC (cvi_enc_rc.c + rcKernel soft-float) cannot be replaced by firmware RC
+      - Upstream review latency for a new codec driver is long
+      - Whether WAVE420L on this SoC decodes H.265 is unverified (vendor has cvi_h265_dec.c, 119 lines)
+  -
+    name: C. Upstream-first for the trivial peripherals, defer accelerators
+    description: Immediately replace pwm/rtc/wdt/saradc with mainline drivers: submit a cv18xx compatible for pwm-sophgo-sg2042 (SG2044 register layout matches), add DTS nodes for watchdog (snps,dw-wdt), pwm, mailbox (sophgo,cv1800b-mailbox) to cv180x.dtsi, enable rtc/saradc already present; add an hwspinlock/mailbox-client for the FreeRTOS link; drop mon/fast_image/clock_cooling. Accelerators stay on the vendor 5.10 kernel or follow Option A later.
+    effort_engineer_weeks: 2-5 (DTS + pwm compatible 1-2, mailbox client + hwspinlock 1-3, userspace IIO/rtc/pwm migration not included)
+    assumptions: SG2000 PWM, WDT, mailbox base addresses and IRQs available from TRM/SDK DTS; wdt does not require the vendor CV_TOP 0x3003004 reset write (unverified).
+    risks:
+      - SARADC eFuse trim correction (saradc/cv181x/cvi_saradc.c:45-48) may be missing in mainline sophgo-cv1800b-adc.c (unverified) -> accuracy regression
+      - RTC power-wakeup/POR/calibration features (cvi_rtc.c:30-44) absent in mainline rtc-cv1800.c (read/set time/alarm only, :151-155)
+  -
+    name: D. TPU as a DRM accel driver
+    description: Re-implement tpu (4,200 LOC, HAL 1,250 LOC per chip) as drivers/accel/cvitek-tpu with GEM/dma-buf buffers, TIU/TDMA command submission ioctls and proper dma_sync; drop phys-addr cache ioctls and the TEE path or gate it. Requires porting/adapting the CVITEK TPU runtime (cviruntime) to the new uAPI.
+    effort_engineer_weeks: 6-12 (kernel 4-8, runtime adaptation 2-4)
+    assumptions: TPU HAL register sequences (tpu/hal/cv181x/tpu_platform.c:160-470) are complete; no firmware; cvimodel command-buffer format unchanged.
+    risks:
+      - accel subsystem expects open userspace stack; CVITEK runtime openness unverified
+      - TEE-protected model path dropped
+key_findings:
+  -
+    finding: The CV181x video codec is a dual-core Chips&Media design: CODA980 (H.264, product code 0x9800) + WAVE420L (HEVC, 0x4201); the JPEG core is a CODAJ12-class JPU ('NIEUPORT' registers).
+    evidence: cvi_vc_drv/vcodec/vpuapi/vpuconfig.h:26,31,51; vpuapi/product.c:45-49,78-82,127-131; cvi_vc_drv/jpeg/jpuapi/regdefine.h:7-18 (NPT_REG_BASE, 'NIEUPORT REGISTERS', MJPEG_PIC_START_REG). CODAJ12 naming is inferred from the NPT_ prefix, not from a product-ID register.
+    confidence: verified
+  -
+    finding: Mainline wave5 cannot drive this VPU: it supports only WAVE5xx product codes and a single TI compatible; Wave4 and Wave5 register/command interfaces differ. Mainline coda supports CODA960 but not CODA980.
+    evidence: /home/user/mainline_linux/drivers/media/platform/chips-media/wave5/wave5-vpuconfig.h:11-18; wave5-vpu.c:467; coda/coda.h:50-53; grep for 980/0x9800 in coda/*.c returned nothing; vendor common_regdefine.h:153,167 (W4_COMMAND 0x100, W4_RET_SUCCESS 0x110) vs wave5-regdefine.h:171,174 (W5_COMMAND 0x100, W5_RET_SUCCESS 0x108).
+    confidence: verified
+  -
+    finding: cvi_vc_drv's 149,523 raw LOC overstate the work: only 29 .c files = 55,730 lines are compiled into cvi_vc_driver.ko; 33,437 header lines are disabled firmware hex arrays; ~38.7k compiled lines (~70%) are Chips&Media host-API/reference code (vpuapi 20,213; sample 8,220; vdi 3,782; jpuapi+jdi+jpeg/src 8,772) and ~15k are CVITEK glue (module/src 9,347; cvi_vc_drv.c+proc 3,942; vcodec/cvi 1,454).
+    evidence: cvi_vc_drv/Makefile:42-81 object list; wc -l over those files; fw_h264.h 21,167 lines / fw_h265.h 12,270 lines guarded by FIRMWARE_H which is commented out at vcodec/sample/helper/main_helper.h:408; copyright scan: 21,842 compiled lines carry Chips&Media headers, 4,504 CVITEK, 29,384 unmarked (wave4.c, common.c, jpuapi*.c, jdi.c, vdi.c structurally C&M; cvi_venc.c/cvi_vdec.c CVITEK).
+    confidence: verified
+  -
+    finding: VPU firmware is loaded by the kernel with filp_open/kernel_read from /usr/share/fw_vcodec/coda980.bin and monet.bin at channel open; this must become request_firmware and the blobs' redistribution terms are unclear.
+    evidence: cvi_vc_drv/vcodec/vdi/linux/vdi_osal.c:215,240; vcodec/config.h:63,68; main_enc_cvitest.c:5516-5522; cvi_dec_internal.c:99-104. Licence concern: web search surfaced sipeed/NanoKVM issue #946 titled 'Licence for the video codec firmware (coda980.bin, monet.bin)' (github blocked, content not read).
+    confidence: likely
+  -
+    finding: All codec/accelerator buffers come from vendor ION carveout via the osdrv sys.ko wrapper (sys_ion_alloc_nofd -> cvi_ion_alloc_nofd) and are passed to userspace as physical addresses; mainline has no ION, only dma-buf heaps.
+    evidence: sys/common/sys.c:57,126,302-338; cvi_vc_drv/vcodec/vdi/linux/vdi.c:1886,1973; vdi_osal.c:299-321; sg2000_linux_5.10/drivers/staging/android/ion/cvitek/cvitek_ion_alloc.c:90-116; mainline ls drivers/dma-buf/heaps = cma_heap.c, system_heap.c; cvi_vc_drv/Makefile:91 defines CVI_H26X_USE_ION_MEM etc.
+    confidence: verified
+  -
+    finding: The vendor vcodec and jpeg low-level modules already use standard kernel infrastructure (of_reserved_mem memory-region, named clocks, named IRQs h265/h264/sbm) and every clock they request has a provider ID in mainline clk-cv1800; what is missing is DTS nodes and the H264C/H265C/JPEG reset wiring.
+    evidence: vcodec/cvi_vcodec.c:1318-1378,1426,1519-1552; vcodec/vcodec_common.c:25-65; jpeg/jpeg_common.c:20-44; mainline include/dt-bindings/clock/sophgo,cv1800.h contains CLK_AXI_VIDEO_CODEC, CLK_H264C, CLK_APB_H264C, CLK_H265C, CLK_APB_H265C, CLK_VC_SRC0/1/2, CLK_CFG_REG_VC, CLK_JPEG, CLK_APB_JPEG (grep count 1 each); cv18xx-reset.h has RST_H264C, RST_H265C, RST_JPEG.
+    confidence: verified
+  -
+    finding: rtos_cmdqu's mailbox register map is identical to mainline drivers/mailbox/cv1800-mailbox.c, but the vendor protocol additionally uses a hardware spinlock at mailbox+0xc0 and reads the C906L PC register; mainline has no mailbox DTS node for cv18xx and no spinlock handling.
+    evidence: rtos_cmdqu/cvi_mailbox.h:49-69 vs cv1800-mailbox.c:19-31 (EN cpu<<2, DONE +2, SET_CLR 0x10+cpu<<4, SET 0x60, CONTEXT 0x400, 8 chans x 8 bytes); rtos_cmdqu.c:580; cvi_spinlock.c:45,62-94; grep 'spin|lock' in cv1800-mailbox.c = 0; grep mailbox in cv180x/cv181x/sg2000/sg2002 dts = none.
+    confidence: verified
+  -
+    finding: TPU depends on a vendor-only export (arch_sync_dma_for_device) for physical-address cache maintenance and on private OP-TEE headers; mainline exports neither.
+    evidence: tpu/common/cvi_tpu_interface.c:970,991 (+__dma_map_area :972,:993); sg2000_linux_5.10/arch/riscv/mm/dma-mapping.c:45,61; mainline kernel/dma/mapping.c:393,410 export only __dma_sync_single_*; tpu/Makefile:8 -I$(srctree)/drivers/tee; cvi_tpu_interface.c:457-497 TEE submit.
+    confidence: verified
+  -
+    finding: pwm, rtc, wdt and saradc can be dropped: mainline has drivers for all four. PWM register layout matches the SG2044 variant of pwm-sophgo-sg2042.c exactly (needs only a cv18xx compatible + DTS); rtc and saradc already have cv18xx DTS nodes; wdt is a dw_wdt fork needing only a DTS node.
+    evidence: pwm/cv181x/cvi_pwm.c:15-28 vs mainline pwm-sophgo-sg2042.c:30-47 (HLPERIOD chan*8+0, PERIOD chan*8+4, POLARITY 0x40, PWMSTART 0x44, OE 0xd0), compatibles only sg2042/sg2044 (:227,230); rtc: cvi_rtc.c:22-44 vs rtc-cv1800.c:18-30 (same offsets +0x1000), MFD soc/sophgo/cv1800-rtcsys.c:24,47, DTS cv180x.dtsi:469-470; saradc: cv180x.dtsi:164 'sophgo,cv1800b-saradc', sophgo-cv1800b-adc.c:210; wdt: cvi_wdt.c:36-52 vs dw_wdt.c:681 'snps,dw-wdt'; no wdt/pwm nodes in mainline cv18xx DTS (grep).
+    confidence: verified
+  -
+    finding: clock_cooling cannot be used on mainline because there is no cv18xx thermal sensor driver or thermal zone upstream; mon (AXI/DDR bandwidth profiler) and fast_image (FreeRTOS fast-boot image handoff) are debug/niche features with no mainline counterpart and can be dropped.
+    evidence: grep sophgo/cv18 in /home/user/mainline_linux/drivers/thermal = none; no 'thermal' in cv180x.dtsi/sg2000.dtsi; clock_cooling.c:5-62 (thermal_cooling_device on clk_cpu/clk_tpu_axi, DT 'dev-freqs'); mon/common/cvi_mon_interface.c:124-181,471-492; fast_image/fast_image.c:87-274 (SYS_CMD_INFO_* over rtos_cmdqu_send_wait, sys_ion_free of isp/img/enc buffers).
+    confidence: verified
+  -
+    finding: rgn has no hardware of its own: it is a software OSD/region manager that allocates ION canvases and hooks into VPSS callbacks, so it is not independently portable and must follow the VPSS/VO port.
+    evidence: rgn survey: no platform_get_resource/clk/irq hits; uses sys_ion_alloc(3)/sys_ion_free(8), vpss_chn_cfg(2), vpss_cb(1), sys_get_vpssmode(2); rgn/Makefile symvers base+sys+vpss; rgn_uapi.h 2 ioctls with 4 sub-ids.
+    confidence: verified
+  -
+    finding: dwa (LDC/dewarp) and ive are self-contained register-programmed engines with standard reg/irq/clk resources but lean on base.ko VIP-sys helpers for clock-enable bits and soft reset; both fit a mem2mem model (dwa cleanly as V4L2 m2m, ive only partially).
+    evidence: dwa/common/dwa_platform.c:40,244,264,272-273,351,363,378; dwa_uapi.h 7 ioctls; ive/common/cvi_ive_interface.c:855 reg, irq 0, sys_ion_alloc/free 4+4, vip_sys_reg_write_mask 2 (RST_IVE); ive LOC split hal/cv181x 10,456 + builder 9,487 generated register headers + common 1,033; 47 ioctls in cvi_ive_ioctl.h.
+    confidence: verified
+  -
+    finding: Mechanical 5.10->7.3 breakage is modest and mostly already wrapped in version ifdefs: 10 class_create(THIS_MODULE), 26 ioremap_nocache, 15 int-returning remove(), 4 vm_flags writes, ~43 legacy time/proc API refs, 116 LINUX_VERSION_CODE sites across the surveyed modules.
+    evidence: grep -rE counts over the compiled .c files of the surveyed modules (excluding non-compiled C&M sample helpers); per-file lists for class_create and ioremap_nocache captured in the survey.
+    confidence: verified
+open_questions:
+  - Does the WAVE420L core on CV181x/SG2000 perform H.265 decoding, or is HEVC decode done elsewhere/not supported? Vendor tree has cvi/cvi_h265_dec.c (119 lines) and cvi_dec_internal.c selects firmware by productId, but WAVE420L is nominally an encoder core (unverified).
+  - Redistribution licence of coda980.bin and monet.bin (search result title only: sipeed/NanoKVM issue #946; content not fetched because github.com is blocked). Required before any request_firmware-based driver can be shipped or upstreamed.
+  - Exact MMIO addresses/IRQ numbers for vcodec (2 cores + vc_sbm + vc_addr_remap), jpeg, tpu (tdma/tiu), ive, dwa, mailbox, pwm, wdt - the vendor board DTS is in the SDK 'build' repo which is not available; must be recovered from SDK or TRM.
+  - Can CODA980 be supported by extending drivers/media/platform/chips-media/coda (CODA960 successor) or does it need a separate driver? Register/command delta not examined.
+  - Mapping of dwa's clk_sys_0..clk_sys_4 consumers to mainline clock IDs (no CLK_SYS_* in sophgo,cv1800.h).
+  - Does mainline dw_wdt work without the vendor CV_TOP+0x3004 write (wdt/cv181x/cvi_wdt.c:49-52) and does the SG2000 wdt need the reset controller?
+  - Does mainline sophgo-cv1800b-adc.c apply the eFuse ADC trim that the vendor saradc reads (cvi_saradc.c:45-48)?
+  - Semantics of the hardware spinlock at mailbox+0xc0 and the C906L PC-register check (cvi_spinlock.c:45) - are they required by the FreeRTOS firmware protocol, and can they be modelled with the hwspinlock framework?
+  - Is the TPU OP-TEE submit path (cvi_tpu_interface.c:457-497) used by any shipped userspace, or can it be dropped?
+  - Whether the kernel-resident rate control (cvi_enc_rc.c + rcKernel soft-float objects) is required for acceptable encode quality, or firmware RC suffices for a V4L2 driver.
+  - Whether RTC power-wakeup/POR/calibration features (cvi_rtc.c:30-44, FC_COARSE/FINE) are needed by the product; mainline rtc-cv1800.c implements only time/alarm.
+  - Whether SG2000 has an IOMMU in front of VPU/TPU (assumed none; unverified) - determines whether phys-addr carveout semantics can be kept in Option A.
+loc_total: 194786

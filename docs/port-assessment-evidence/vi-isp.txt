@@ -1,0 +1,272 @@
+Phase-1 reader report: vi-isp (generated 2026-10-06; evidence as file:line in the named repository; see docs/sg2000-kernel-port-plan.md)
+
+scope: ISP/VI driver of the SG2000/CV181x osdrv suite: /home/user/sg2000_osdrv/interdrv/v2/vi (vi_core.c, chip/cv181x/vi.c, vi_sdk_layer.c, vi_ext.c, vi_raw_dump.c, vi_isp_buf_ctrl.c, cmdq.c, vip/*_ip_ctrl.c, vip/vi_drv.c, vip/vi_subsys_ctrl.c, proc/*), its uAPI (include/chip/cv181x/uapi/linux/{vi_uapi.h,vi_isp.h,vi_tun_cfg.h,isp_reg.h,vi_snsr.h,vi_reg_blocks.h,vi_reg_fields.h,vi_vreg_blocks.h}, include/common/uapi/linux/{cvi_comm_vi.h,cvi_vi_ctx.h}), and the coupling to interdrv/v2/rtos_cmdqu and interdrv/v2/fast_image. Compared against mainline 7.3-rc6 (rkisp1, amlogic c3-isp, raspberrypi pisp_be; StarFive camss is NOT present in the 7.3 tree: drivers/media/platform/starfive does not exist). Module name cv181x_vi.ko (vi/Makefile:8 with CVIARCH_L=cv181x).
+kernel_interface: Char device /dev/cvi-vi (class "cvi-vi", alloc_chrdev_region+cdev, vi_core.c:4-6,109-145) with 2 ioctl numbers VI_IOC_G_CTRL/S_CTRL (_IOWR 'V' 0x20/0x21 on packed struct vi_ext_control containing a void* — vi_uapi.h:18-19,128-137) multiplexing 53 sub-command IDs (enum VI_IOCTL, vi_uapi.h:21-75; handlers _vi_s_ctrl vi.c:4931-5380, _vi_g_ctrl vi.c:5382-5760) of which VI_IOCTL_SDK_CTRL further multiplexes 38 CVI-MPI "SDK" sub-ids (enum VI_SDK_CTRL vi_uapi.h:77-116; vi_sdk_layer.c:1148-1660). Three VI_IOCTL_AE_CFG/AWB_CFG/AF_CFG IDs exist but have no case handler (grep 0 hits in vi/chip/cv181x/*.c). mmap(): maps an 8 KiB kzalloc'd shared context struct cvi_vi_ctx (4376 B; cvi_vi_ctx.h:14-66) read/written by both sides via remap_pfn_range (vi.c:40,4894,5875-5903). poll(): POLLPRI = ISP event queue (17 event types, vi_uapi.h:121-139) drained with VI_IOCTL_DQEVENT (vi.c:5645-5682, 5906-5935); POLLIN = debug/proc flag. Events are queued from ISR/handlers with timestamps (vi.c:2117-2150; callers vi.c:7363,7678,7725,7736,7759,7866 = SOF, pre_be done, post EOF). procfs: /proc/cvitek/vi, /proc/cvitek/vi_dbg, /proc/cvitek/isp (proc/vi_proc.c:5, vi_dbg_proc.c:4, vi_isp_proc.c:5; proc_ops). Module params: vi_log_lv, stop_stream_en, ctrl_flow (vi.c:56-65), csi_patgen_en[], tuning_dis[4], sbm_en, rgbmap_sbm_en (vi.h:1461-1497). Physical addresses cross the uAPI in both directions: userspace supplies the ISP DMA pool paddr/size (VI_IOCTL_SET_DMA_BUF_INFO vi.c:5322-5340), kernel returns stats-buffer paddrs (VI_IOCTL_STS_MEM vi.c:5428-5460) and tuning-buffer paddrs plus kernel virtual pointers (VI_IOCTL_GET_TUN_ADDR vi.c:5627-5643; struct isp_tuning_cfg vi_tun_cfg.h:1450-1466). Frame buffers are enqueued with paddr planes (struct vi_buffer vi_uapi.h:139-152; VI_IOCTL_ENQ_BUF vi.c:5279-5320) or via the in-kernel VB pool (vi_sdk_qbuf vi_sdk_layer.c:77-125).
+hw_blocks:
+  - ISP register window base 0x0A000000 (isp_reg.h:8), 143 sub-blocks enumerated (ISP_BLK_ID_* isp_reg.h, count 143; CMDQ at +0x7FC00 isp_reg.h:163) => reg size >= 0x80000
+  - 3x pre_raw front-ends: PRE_RAW_FE0 (4 ch) at +0x0, FE1 (2 ch) at +0x8000, FE2 (2 ch) at +0x10000, each with CSI bridge (CSIBDGx), BLC, RGBMAP, WBG and DMA_CTL (isp_reg.h:16-54; vi_isp.h:27-62; FRAME_START/DONE enable widths vi_subsys_ctrl.c:388-403)
+  - 1x pre_raw back-end PRE_RAW_BE at +0x18000: CROP0/1, BLC5/6, AF statistics, DPC0/1, PRE_WDMA (isp_reg.h:56-69)
+  - RAWTOP at +0x30000: CFA demosaic, LSC, GMS, AEHIST0/1, RAW_RDMA, BNR, CROP2/3, LMAP0/1, WBG0/1, LCAC, RGBCAC (isp_reg.h:71+; vi_isp.h:103-131)
+  - RGBTOP: CCM0/1, RGBGAMMA, YGAMMA, MMAP (3DNR motion map), CLUT (3D LUT), DHZ (dehaze), CSC, RGBDITHER, HIST_V, HDRFUSION, HDRLTM (vi_isp.h:133-158)
+  - YUVTOP: TNR, FBCE/FBCD (frame-buffer compression), YUVDITHER, CA/CA_LITE, YNR, CNR, EE, YCURVE, DCI, LDCI, PRE_EE, CROP4/5 (vi_isp.h:160-184)
+  - ISPTOP (+0x70000) interrupt/trigger/shadow control, WDMA_CORE0/1, RDMA_CORE, CSIBDG_LITE, PRE_RAW_VI_SEL (isp_reg.h:151-163)
+  - CMDQ hardware command queue (register-write DMA engine with wait-flag/timer, ADMA tables) cmdq.c:22-33,144-171; used only for atomic ISP_TOP SW_CTRL_0/1 trigger writes (vi_drv.c:493-519)
+  - Single 'isp' IRQ; ISR decodes ISP_TOP INT_EVENT0/1/2: FE frame start/done per channel, BE done, POST frame/shadow done, FRAME_ERR, PCHK_ERR, CMDQ_INT, LINE_INTP (vi.c:7914-7960; vi_reg_fields.h:8308-8320; vi_subsys_ctrl.c:388-425)
+  - VIP_SYS shared register block (owned by base module): ISP_TOP reset/clk gating/CSI MAC divider/bandwidth (reg_vip_sys.h:22,62-65,126-129,186-189; vi.c:2489-2497,4439-4444,4850)
+  - Hardware online handshake ISP post -> VPSS scaler ('is_offline_scaler', VI_CB_SET_VIVPSSMODE vi.c:5958-5990; VPSS_CB_VI_ONLINE_TRIGGER 7 call sites)
+  - Sensor sync path: ISP SOF/vblank-triggered I2C register bursts to the sensor via snsr_i2c (vi.c:1828-1950; vi.c:7248-7262; kapi/snsr_i2c.h:30-35)
+  - Optional second-core coupling: mailbox (rtos_cmdqu, compatible cvitek,rtos_cmdqu, irq 'mailbox', spinlock regs at +0xc0, rtos_cmdqu.c:560-583,629-631) and fast_image (compatible cvitek,rtos_image; marks VI 'isp' IRQ IRQ_NOAUTOEN and hands it back from FreeRTOS via SYS_CMD_INFO_STOP_ISR, fast_image.c:80-105,664-666,765-780)
+dt_expectations:
+  compatibles:
+    - cvitek,vi (vi_core.c:321-327)
+    - cvitek,cif (cif/chip/cv181x/cif.c:3400) — prerequisite MIPI CSI-2 RX
+    - cvitek,base (base/base.c:917) — VIP_SYS regs + VB pool
+    - cvitek,rtos_cmdqu (rtos_cmdqu.c:629-631) — optional
+    - cvitek,rtos_image (fast_image.c:629-630) — optional; fast_image also matches cvitek,vi / cvitek,asic-vcodec / cvitek,asic-jpeg nodes only to grab their IRQs (fast_image.c:654-666)
+  reg_names_or_count: 1 IORESOURCE_MEM (ISP top, devm_ioremap_resource vi_core.c:201-202); phys base 0x0A000000 per isp_reg.h:8, must cover at least 0x80000 (CMDQ at +0x7FC00 isp_reg.h:163). Additionally hard-coded ioremap() of bandwidth-limiter registers bwladdr[i] outside the node (vi.c:2790-2795) — addresses unverified.
+  irq_names:
+    - isp (platform_get_irq_byname, vi_core.c:4,211; shared ownership with fast_image which sets IRQ_NOAUTOEN on the same IRQ, fast_image.c:772-779)
+  clock_names:
+    - clk_sys_0
+    - clk_sys_1
+    - clk_sys_2
+    - clk_sys_3
+    - clk_axi
+    - clk_csi_be
+    - clk_raw
+    - clk_isp_top
+    - clk_csi_mac0
+    - clk_csi_mac1
+    - clk_csi_mac2 (all devm_clk_get by con-id, vi_interfaces.h:10-18, vi_core.c:148-184). Mainline sophgo,cv1800.h provides CLK_SRC_VIP_SYS_0..4 (100-104), CLK_AXI_VIP (99), CLK_CSI_BE_VIP (105), CLK_ISP_TOP_VIP (111), CLK_CSI_MAC0..2_VIP (106-108); no obvious match for 'clk_raw' — unverified
+  reset_handling: No reset-controller consumer. ISP reset is done (a) through the base module's VIP_SYS register block: vip_toggle_reset(isp_top|isp_top_apb) (vi.c:4439-4444; base/chip/cv181x/vip_sys.c:64-68; reg_vip_sys.h:62-65,126-129) and (b) via ISP_TOP SW_RST register sequence 0x40/0x37F/0x40 (vi_subsys_ctrl.c:521-545). Mainline reset-simple only exposes RST_VIPSYS (cv18xx-reset.h:13); a VIP_SYS syscon/reset provider would be needed.
+  gpios_and_misc_props:
+    - Optional sensor-mux switch GPIO passed as a legacy GPIO number from userspace attributes, gpio_request/gpio_direction_output (vi.c:2920-2930)
+    - No of_property_read_* in the VI driver (grep 0); all topology/format comes from ioctls
+    - CIF needs clk_cam0, clk_cam1, clk_sys_2, clk_mipimpll, clk_disppll and multiple reg/irq resources (cif.c:2801-2868)
+  reserved_memory_or_ion: VI itself allocates only the CMDQ command buffer (128 KiB per pipe) via sys_ion_alloc (vi.c:41,5766-5800). The whole ISP working-memory pool (bayer/rgbmap/prebe/lsc/3A-stats/TNR/FBC buffers carved by _mempool_pop, vi.c:115-140,405-522) is allocated by userspace from the vendor ION carveout heap and handed over as paddr+size (vi.c:5322-5340); output frames come from the base VB pool (ION-backed). fast_image maps a reserved region passed as its platform MEM resource (fast_image.c:787-800). Mainline has no ION; dma-heaps (cma_heap/system_heap) exist (drivers/dma-buf/heaps).
+depends_on_modules:
+  - base (cv181x_base.ko): base_reg_module_cb/base_exe_module_cb callback bus, vb_* VB pool (32 call sites), base_get_frame_info/base_set_mod_ctx, VIP_SYS register access vip_sys_reg_write_mask/vip_toggle_reset, vip_sys_cmm_cb_i2c — Makefile KBUILD_EXTRA_SYMBOLS vi/Makefile:28
+  - sys (cv181x_sys.ko): sys_ion_alloc/sys_ion_free (4 sites), sys_cache_flush/invalidate (4 sites, vi_drv.c:500-514) — vi/Makefile:29
+  - cif (MIPI CSI-2 RX): CIF_CB_RESET_LVDS, CIF_CB_GET_CIF_ATTR, CVI_MIPI_SET_YUV_SWAP via callback bus (vi.c:2352,2844-2859)
+  - snsr_i2c (sensor I2C bridge, reached through base's vip_sys_cmm_cb_i2c; vi.c:1887,1950; snsr_i2c/common/snsr_i2c.c i2c_transfer)
+  - vpss (scaler): VPSS_CB_VI_ONLINE_TRIGGER (7 sites), VPSS_CB_OVERFLOW_CHECK, VPSS_CB_ONLINE_ERR_HANDLE (vi.c:2962-6756) — required for online mode, optional for offline
+  - dwa (GDC/LDC): rotation/LDC on VI output frames via E_MODULE_DWA callback (vi.c:159-180; vi_sdk_layer.c:_mesh_gdc_do_op_cb)
+  - rtos_cmdqu + fast_image: NO symbol dependency from VI (grep 0 for rtos/fast_image in vi/); only IRQ-ownership coupling when FreeRTOS fast-boot is used (fast_image.c:80-105,772-779)
+vendor_kernel_only_deps:
+  -
+    symbol_or_header: cvi_ion_alloc/cvi_ion_free + drivers/staging/android/ion (ION_HEAP_TYPE_CARVEOUT), reached via sys_ion_alloc/sys_ion_free
+    evidence: sys/common/sys.c:116-180 (cvi_ion_alloc, dma_buf_get, ionbuf->paddr); vendor export drivers/staging/android/ion/cvitek/cvitek_ion_alloc.c:104-110; VI call sites vi.c:5776,5780,5797 and vi_sdk_layer.c:555; vi/Makefile:17 adds -I$(srctree)/drivers/staging/android. ION was removed from mainline in 5.11; mainline 7.3 has only dma-buf heaps (drivers/dma-buf/heaps/{cma_heap.c,system_heap.c}).
+    call_sites: 4
+    replacement_in_mainline: dma_alloc_coherent/dma_alloc_attrs on the ISP struct device, or dma-heap (cma_heap) buffers imported as dma-buf; userspace side must move from /dev/ion to /dev/dma_heap or vb2.
+  -
+    symbol_or_header: arch_sync_dma_for_device() EXPORT (T-Head C906 dcache ops) used by sys_cache_flush/sys_cache_invalidate
+    evidence: sys/common/sys.c:376-394 calls arch_sync_dma_for_device; vendor export arch/riscv/mm/dma-mapping.c:45,61; mainline 7.3 declares it in include/linux/dma-map-ops.h:341 but has no EXPORT_SYMBOL in arch/riscv/mm or kernel/dma (grep 0); VI uses it for the CMDQ buffer at vi_drv.c:500-502,512-514.
+    call_sites: 4
+    replacement_in_mainline: dma_sync_single_for_device/for_cpu (exported kernel/dma/mapping.c:410,427) on DMA-API-mapped buffers; mainline already has T-Head CMO errata support (arch/riscv/errata/thead/errata.c:74-95) and 'dma-noncoherent' in sg2000.dtsi:21.
+  -
+    symbol_or_header: sched_setscheduler() export
+    evidence: vi.c:4527 sched_setscheduler(..., SCHED_FIFO, &param); vendor kernel re-exports it (sg2000_linux_5.10 kernel/sched/core.c:5521); mainline only exports sched_set_fifo/sched_set_fifo_low (kernel/sched/syscalls.c:817,827).
+    call_sites: 1
+    replacement_in_mainline: sched_set_fifo(task) (include/linux/sched.h:1965)
+  -
+    symbol_or_header: #include <linux/streamline_annotate.h> (ARM Streamline, vendor-only header)
+    evidence: vi.h:16; present in sg2000_linux_5.10/include/linux/streamline_annotate.h, absent in mainline (ls fails); zero ANNOTATE_* uses in VI (grep 0).
+    call_sites: 1
+    replacement_in_mainline: delete include
+  -
+    symbol_or_header: Vendor-local 'legacy_timer_emu' shim and del_timer_sync()
+    evidence: vi.h:166-173 typedef struct legacy_timer_emu with function(unsigned long)/data; usr_pic_timer uses legacy_timer_emu_func (vi.c:2092,4548) and del_timer_sync (2 sites, vi.c:2086 region); mainline 7.3 include/linux/timer.h has only timer_delete_sync (grep: no del_timer_sync definition in include/).
+    call_sites: 26
+    replacement_in_mainline: timer_setup()/from_timer()/timer_delete_sync()
+  -
+    symbol_or_header: -I$(srctree)/drivers/tee include path
+    evidence: vi/Makefile:16; no tee symbol use found in VI sources (grep for tee not performed on symbols — unverified whether any header from drivers/tee is included).
+    call_sites: 0
+    replacement_in_mainline: drop
+  -
+    symbol_or_header: Userspace ION uAPI (/dev/ion ION_IOC_ALLOC + ION_IOC_CVITEK_FLUSH_RANGE/INVALIDATE_RANGE custom ioctls) that the closed middleware uses to allocate the ISP DMA pool and VB blocks
+    evidence: sg2000_linux_5.10/drivers/staging/android/ion/cvitek/cvitek_ion.c:281-397; VI consumes the resulting paddr via VI_IOCTL_SET_DMA_BUF_INFO (vi.c:5322-5340). Not a kernel symbol but a hard binary-compat dependency.
+    call_sites: 1
+    replacement_in_mainline: dma-heap uAPI (/dev/dma_heap/*) + DMA_BUF_IOCTL_SYNC; requires middleware change or an ION-compat shim device
+userspace_contract: All image-quality intelligence lives in userspace. (1) 3A: no AE/AWB/AF code in the kernel — the VI_IOCTL_AE_CFG/AWB_CFG/AF_CFG IDs are unhandled (grep 0 case labels); the kernel only DMAs statistics (AF, GMS, AE_LE/SE histograms, AWB, AWB_POST, DCI, HIST_EDGE_V, MMAP) into two banks of memblocks whose paddrs are published by VI_IOCTL_STS_MEM (struct cvi_isp_sts_mem vi_isp.h:233-245; vi.c:5428-5460) with a busy-index handshake STS_GET/STS_PUT and POST_STS_GET/PUT (vi.c:5004-5040,5389-5426) and wakes userspace via POLLPRI events (VI_EVENT_PRE*_SOF/EOF, POST_EOF, AWB*_DONE vi_uapi.h:121-139). (2) Tuning: userspace fills double-buffered tuning nodes (TUNING_NODE_NUM=2, per-block 'update' flags) in struct cvi_vip_isp_{fe,be,post}_cfg — measured sizes fe 212 B, be 33268 B, post 94852 B (47424 B per node) via host compile of vi_tun_cfg.h; ~80 config structs over 1472 header lines — written into kernel kzalloc'd memory addressed by physical address returned from VI_IOCTL_GET_TUN_ADDR (vi_tun_ip_ctrl.c:246-298 virt_to_phys; vi.c:5627-5643, which also copies kernel virtual pointers post_vir/be_vir/fe_vir to userspace). The kernel applies them at frame boundaries from the SCHED_FIFO 'cvitask_isp_pre' kthread (pre_fe/pre_be/postraw_tuning_update vi.c:7172-7190 -> ispblk_*_tun_cfg vi_tun_ip_ctrl.c:431-2444) and keeps a backup copy for resume (vi_tun_ip_ctrl.c:301-372). How userspace maps that physical address is not visible in osdrv (no mmap in sys.c; likely /dev/mem) — unverified. (3) Sensor control: sensor drivers are userspace libraries; exposure/gain register lists are pushed per frame (VI_IOCTL_SET_SNR_CFG_NODE, struct snsr_cfg_node_s vi_snsr.h:120-158; vi.c:5159-5200) and the kernel fires them at SOF or vblank through snsr_i2c (vi.c:1828-1950,7248-7262). Sensor format/WDR geometry also comes from userspace (VI_IOCTL_SET_SNR_INFO vi.c:5202-5226). (4) Shared memory: struct cvi_vi_ctx (dev/pipe/chn attributes, status counters) is mmap'd and mutated by both sides (cvi_vi_ctx.h:14-66; vi.c:4894,5875-5903). (5) Binary compatibility concerns: packed ioctl struct with embedded pointer (vi_uapi.h:128-137), physical addresses and kernel pointers in the ABI, dependence on vendor ION uAPI for every DMA buffer, and a 4376-byte shared struct layout. The CVITEK middleware (libisp/libae/libawb/libaf/libsys/libvi) is only available as the SDK's binaries/sources outside these repos; whether a buildable open-source copy (e.g. 'cvi_mpi') exists could not be checked (github.com blocked) — unverified. Kernel-side value-add is limited to motion-level/DCI-level derivation from MMAP stats for VPSS/codec hints (vi.c:6080-6132) and DIS crop bookkeeping (vi_sdk_layer.c:154).
+api_breakages_5_10_to_7_3:
+  -
+    api: class_create(THIS_MODULE, name) -> class_create(name) (6.4)
+    what_changed: owner argument removed; mainline include/linux/device/class.h:226
+    fix: drop THIS_MODULE argument
+    severity: trivial
+    call_sites: 1
+  -
+    api: platform_driver.remove returns void (6.11+)
+    what_changed: include/linux/platform_device.h:280 'void (*remove)(struct platform_device *)'; vi_core.c:266 returns int
+    fix: change signature, log instead of returning error
+    severity: trivial
+    call_sites: 1
+  -
+    api: sched_setscheduler() no longer exported to modules
+    what_changed: only sched_set_fifo/sched_set_fifo_low exported (kernel/sched/syscalls.c:817,827); vendor 5.10 had re-added the export (core.c:5521)
+    fix: sched_set_fifo(thread) at vi.c:4527
+    severity: trivial
+    call_sites: 1
+  -
+    api: del_timer_sync() / legacy timer callback(unsigned long)
+    what_changed: del_timer_sync removed in favour of timer_delete_sync (include/linux/timer.h:165-166); the vendor-local legacy_timer_emu shim (vi.h:166-173) still compiles but is a hack
+    fix: convert usr_pic_timer to timer_setup/from_timer and timer_delete_sync; ~26 touched lines
+    severity: trivial
+    call_sites: 26
+  -
+    api: Local 'static long compat_ptr_ioctl()' under CONFIG_COMPAT
+    what_changed: fs.h declares extern compat_ptr_ioctl (mainline include/linux/fs.h:1824, also vendor fs.h:1753); riscv now has CONFIG_COMPAT (arch/riscv/Kconfig:1136) so vi_core.c:38 becomes a redefinition error when COMPAT=y
+    fix: delete local definition, use kernel's compat_ptr_ioctl
+    severity: trivial
+    call_sites: 1
+  -
+    api: ION kernel API (sys_ion_alloc/free -> cvi_ion_alloc, struct ion_buffer)
+    what_changed: drivers/staging/android/ion removed in 5.11; vi/Makefile:17 include path and sys.c:116-180 no longer build
+    fix: replace sys_ion_* with dma_alloc_coherent/dma-heap-backed allocations; rework sys module and the userspace pool handover (VI_IOCTL_SET_DMA_BUF_INFO) to dma-buf fds
+    severity: hard
+    call_sites: 4
+  -
+    api: arch_sync_dma_for_device() not exported (used by sys_cache_flush/invalidate)
+    what_changed: declared in include/linux/dma-map-ops.h:341 but no EXPORT in mainline riscv/kernel-dma; vendor exported it (arch/riscv/mm/dma-mapping.c:45,61)
+    fix: use dma_sync_single_for_device/for_cpu with a struct device and dma_addr_t; requires DMA-API mapping of the CMDQ buffer (vi_drv.c:500-514) and of every pool buffer touched by CPU
+    severity: moderate
+    call_sites: 4
+  -
+    api: Physical-address tuning buffer sharing (virt_to_phys of kzalloc memory handed to userspace)
+    what_changed: not an API removal, but mainline CONFIG_STRICT_DEVMEM/IO_STRICT_DEVMEM defaults make /dev/mem mapping of kernel RAM impossible; vi_tun_ip_ctrl.c:264-266, vi.c:5636
+    fix: allocate tuning nodes with dma_alloc_coherent or as a dma-buf and expose via the VI mmap offset or a dma-buf fd
+    severity: moderate
+    call_sites: 2
+  -
+    api: tasklet_init/tasklet_hi_schedule
+    what_changed: still present in 7.3 (include/linux/interrupt.h:803) but deprecated; 16 sites (vi.c:292,2077,4756,5316,...)
+    fix: optional: convert isp_post_tasklet to threaded IRQ or BH workqueue
+    severity: moderate
+    call_sites: 16
+  -
+    api: Legacy integer GPIO API (gpio_request/gpio_direction_output/gpio_set_value/gpio_free)
+    what_changed: still available via include/linux/gpio/legacy.h:50 but deprecated; GPIO number comes from userspace attr (vi.c:2920-2930)
+    fix: optional: gpiod via DT 'mux-gpios'
+    severity: trivial
+    call_sites: 4
+  -
+    api: __clk_is_enabled()
+    what_changed: still exists (include/linux/clk-provider.h:1495) but is clk-provider internal; 6 sites vi.c:4787-4837
+    fix: track enable state locally
+    severity: trivial
+    call_sites: 6
+  -
+    api: ktime_to_timeval()/struct timeval in struct vi_event
+    what_changed: removed; only reached in '#else' (<5.10) and '#if 0' branches (vi.c:2148, 5660)
+    fix: delete dead branches
+    severity: trivial
+    call_sites: 2
+  -
+    api: do_exit() from kthreads
+    what_changed: still exported (kernel/exit.c:1031) but kthreads should return/kthread_exit (vi.c:6228,6838,7149,7246)
+    fix: return 0 / kthread_exit()
+    severity: trivial
+    call_sites: 4
+mainline_framework_fit: Framework: V4L2 + media-controller ISP driver with videobuf2, exactly the shape of drivers/media/platform/rockchip/rkisp1 (CSI subdev, ISP subdev, resizer subdevs, capture video nodes, params META_OUTPUT queue rkisp1-params.c:2819, stats META_CAPTURE queue rkisp1-stats.c:163; params applied at frame start in rkisp1_params_isr rkisp1-params.c:2338, stats published in rkisp1_stats_isr rkisp1-stats.c:379), drivers/media/platform/amlogic/c3/isp (V4L2_META_FMT_C3ISP_PARAMS/STATS, c3-isp-params.c:729, c3-isp-stats.c:105) and, for the memory-to-memory passes, drivers/media/platform/raspberrypi/pisp_be (per-job config buffer as META_OUTPUT, pisp_be.c:126,196-208,360). StarFive camss is absent from the 7.3 tree so no comparison was possible. Structural fit is good: (a) statistics are already DMA'd by hardware into fixed-size memblocks (AF/GMS/AE/AWB/DCI/HIST/MMAP, vi_isp.h:233-245) -> META_CAPTURE buffers; (b) tuning is already a double-buffered, per-block 'update'-flagged struct applied at frame boundaries (vi_tun_cfg.h:1432-1448; vi.c:7172-7190) -> directly analogous to RKISP1 extensible params with per-block enable/disable headers (rkisp1-params.c:1736-2120) and to libcamera's params/stats IPA model; (c) the register-programming layer is cleanly separated (vip/*_ip_ctrl.c ~9.0k lines with near-zero kernel API use: 0 kernel-API hits in vi_be/vi_raw/vi_yuv/vi_subsys/vi_ip_test_case, 2 in vi_drv.c/vi_fe/vi_rgb, 14 slab hits in vi_tun_ip_ctrl.c; plus 28.3k lines of generated register headers) and can be reused as-is behind a V4L2 shell. Mismatches: (1) pipeline is multi-pass and time-multiplexed — 3 FEs feed one BE and one post stage through DRAM (fe->be->dram->post default for single sensor, vi.c:_vi_scene_ctrl single-sensor branch; fe->dram->be->post for dual RGB) — so the ISP subdev must model M2M scheduling like pisp_be rather than rkisp1's inline flow; (2) the hardware 'online to VPSS scaler' handshake (is_offline_scaler, VPSS_CB_VI_ONLINE_TRIGGER) requires the VPSS scaler to be a subdev in the same media graph or must be dropped (offline-to-DRAM is the default: vi.c:4605); (3) sensors are userspace in the vendor stack (vi_snsr.h cfg nodes) and would become in-kernel V4L2 subdevs with the CIF module as a CSI-2 receiver subdev; (4) the per-frame params block is large (47 KB post node) and would need an extensible/blocked uAPI design and a libcamera IPA plus open 3A algorithms, none of which exist for this ISP; (5) VB-pool/ION buffer ownership (vi_sdk_layer.c:77-125) is replaced by vb2 dma-contig (drivers/media/common/videobuf2/videobuf2-dma-contig.c) on a dma-noncoherent device (sg2000.dtsi:21, T-Head CMO errata present). Quantified: register programming .c 9046 lines (+1056 header lines, +28319 register-description header lines) is portable as-is; kernel-interface glue 11814 .c lines (+2069 header lines; vi.c alone 8229 with 1496 ISP_WR/RD macro uses and 362 ispblk_* calls) and 3094 uAPI header lines are what a V4L2 rewrite replaces.
+port_options:
+  -
+    name: A. Lift-and-shift the vendor VI module onto mainline 7.3 (out-of-tree, uAPI preserved)
+    description: Keep cv181x_vi.ko and its ioctl/mmap/proc ABI so the existing CVITEK middleware keeps working. Fix the trivial API breaks (class_create, remove(), sched_set_fifo, timers, compat_ptr_ioctl, includes), replace sys_ion_*/sys_cache_* with dma_alloc_coherent/dma_sync_single on the VI platform device, move tuning-node sharing from virt_to_phys+/dev/mem to a VI mmap offset or dma-buf, add a DT node (compatible cvitek,vi, 1 reg, irq 'isp', 11 clocks mapped to sophgo,cv1800.h ids, VIP_SYS syscon/reset provider) and port base/sys/cif/snsr_i2c alongside (separate work items).
+    effort_engineer_weeks: 6-10 for VI alone
+    assumptions: base/sys (incl. ION->dma-heap shim), cif and snsr_i2c ports happen in parallel and are not counted; SG2000 board with a supported sensor available; middleware binaries runnable (ION uAPI shim or rebuilt middleware); single-sensor fe->be->dram->post path is the acceptance target; multi-sensor/online-VPSS/fast-boot not required.
+    risks:
+      - ION/cache semantics: pool buffers are allocated and flushed by userspace with vendor ION ioctls; dma-noncoherent C906 means any mismatch yields stale stats/garbage frames
+      - Tuning/stat buffers addressed by raw physical address (vi.c:5636, 5428-5460) — must be redesigned if STRICT_DEVMEM is on
+      - Hard-coded ioremap of bandwidth-limiter registers (vi.c:2790) and VIP_SYS reset/clk register sharing with base
+      - IRQ 'isp' shared with fast_image/FreeRTOS semantics (IRQ_NOAUTOEN) if fast-boot is kept
+      - Closed middleware ABI (packed struct with pointer, mmap'd cvi_vi_ctx layout) pins compiler/arch assumptions
+      - Not upstreamable; every kernel bump repeats the API chase
+  -
+    name: B. Native V4L2/media-controller ISP driver + libcamera pipeline handler/IPA (upstreamable)
+    description: New driver reusing vip/*_ip_ctrl.c + register headers behind a rkisp1/c3-isp/pisp_be-style shell: CIF as CSI-2 receiver subdev, ISP FE/BE/post as subdevs or an M2M job scheduler, per-channel capture video nodes (vb2 dma-contig), params node (META_OUTPUT, new vendor fourcc with extensible blocks derived from vi_tun_cfg.h), stats node (META_CAPTURE mirroring cvi_isp_sts_mem), sensors as in-kernel V4L2 subdevs with exposure/gain controls, dt-bindings and DTS. Userspace: libcamera pipeline handler + IPA module with new open AE/AWB/AF/tuning (no open 3A exists for this ISP).
+    effort_engineer_weeks: 20-35 kernel + 15-30 libcamera/IPA/3A; plus 1-2 per sensor subdev
+    assumptions: Register semantics inferred from vendor code only (no datasheet); first target single RGB sensor, offline post->DRAM, no VPSS online, no HDR/3DNR tuning parity; two experienced V4L2/libcamera engineers; upstream review iterations included but acceptance timing not.
+    risks:
+      - No hardware documentation beyond register headers; corner behaviour (slice buffer, FBC, HDR fusion, multi-sensor mux) only known from 8k lines of vendor state machine
+      - Online ISP->VPSS path cannot be expressed without a VPSS subdev; dropping it may cost bandwidth/latency
+      - uAPI design review for a ~47 KB per-frame params block and 143 register blocks; risk of long upstream cycles
+      - Image quality: open 3A/tuning from scratch; vendor tuning files are closed
+      - Multi-sensor BE/post time-multiplexing and HDR (2 FE channels) add scheduler complexity
+      - Mainline DTS/clk tree gaps (no VIP_SYS reset/syscon provider, unverified 'clk_raw' mapping, no mailbox node)
+  -
+    name: C. Staged hybrid: A first, then wrap capture/stats/params in V4L2 while reusing vendor tuning structs
+    description: Deliver A to get a working camera on 7.x quickly; then incrementally expose V4L2 video nodes for channel output, a META_CAPTURE stats node and a META_OUTPUT params node whose payloads are the existing cvi_vip_isp_*_cfg/cvi_isp_sts_mem structs (vendor fourcc, out-of-tree), so a libcamera pipeline handler can drive it while the vendor 3A is wrapped as an IPA shim or replaced over time.
+    effort_engineer_weeks: A (6-10) + 10-16 additional
+    assumptions: Vendor 3A libraries can be linked/wrapped in userspace (license/ABI permitting) or replaced later; VPSS online mode dropped; sensors still userspace initially then migrated to subdevs.
+    risks:
+      - Two owners of ISP state (vendor ioctls vs V4L2) during transition
+      - Vendor structs in a V4L2 META format are not upstreamable; stays out-of-tree
+      - Doubles test matrix; regressions in tuning timing (SCHED_FIFO preraw thread vs vb2 queue semantics)
+key_findings:
+  -
+    finding: The VI module is a monolithic char-device driver (2 ioctl numbers, 53 sub-ids + 38 SDK sub-ids, 17 event types, mmap of a shared context struct) with no V4L2/media-controller use.
+    evidence: vi_uapi.h:18-19,21-116,121-139; vi_core.c:67-77,109-145; vi.c:4931-5760,5875-5935; vi_sdk_layer.c:1148-1660
+    confidence: verified
+  -
+    finding: All 3A (AE/AWB/AF) and tuning algorithms run in userspace; the kernel only publishes DMA'd statistics buffers (paddr + double-buffer index) and applies userspace-written tuning nodes at frame boundaries. The three AE/AWB/AF ioctl IDs are unhandled.
+    evidence: vi.c:5004-5040,5389-5460 (STS_GET/PUT, STS_MEM); vi_isp.h:233-245; vi.c:7172-7190 and vi_tun_ip_ctrl.c:431-720 (tuning update); grep 'case VI_IOCTL_AE_CFG|AWB_CFG|AF_CFG' = 0 hits
+    confidence: verified
+  -
+    finding: Tuning uAPI size: post 47424 B per node (94852 B for the 2-node struct), be 16632 B/node (33268 B), fe 104 B/node (212 B); vi_tun_cfg.h is 1472 lines; tuning buffers are kzalloc'd and exported to userspace by physical address together with kernel virtual pointers.
+    evidence: host compile of vi_tun_cfg.h (sizes printed); vi_tun_ip_ctrl.c:246-298; vi.c:5627-5643; vi_tun_cfg.h:1450-1466
+    confidence: verified
+  -
+    finding: Pipeline: 3 pre_raw FEs (FE0 4ch, FE1/FE2 2ch) -> 1 pre_raw BE -> RAWTOP/RGBTOP/YUVTOP post stage; default single-sensor mode is fe->be->DRAM->post with slice-buffer ring; dual RGB sensors use fe->DRAM->be->post; optional on-the-fly and ISP->VPSS online handshake. 143 register blocks in a 0x80000 window at 0x0A000000.
+    evidence: isp_reg.h:8,16-163,306-307; vi_isp.h:27-184; vi.c _vi_scene_ctrl (single/dual/three sensor branches, incl. 'fe->be->dram(sbm)->post' comments); vi.c:4605 is_offline_scaler default true; vi_subsys_ctrl.c:380-425
+    confidence: verified
+  -
+    finding: Single IRQ 'isp'; ISR reads ISP_TOP INT_EVENT0/1/2 and dispatches FE SOF/EOF, BE done, POST done, CMDQ, error bits; work is deferred to a hi-tasklet and four SCHED_FIFO kthreads (preraw/tuning+sensor I2C, vblank, error, event/VB delivery).
+    evidence: vi_core.c:4,100-107,211,237; vi.c:7914-7960; vi_reg_fields.h:8308-8320; vi.c:4465-4535 (threads, sched_setscheduler), 7110-7128 (tasklet), 6203-6335 (event handler -> vb_done_handler)
+    confidence: verified
+  -
+    finding: Buffer model: userspace allocates one ISP working pool from the vendor ION carveout and passes paddr/size; the kernel carves bayer/rgbmap/prebe/lsc/stats/TNR/FBC buffers from it with a bump allocator; output frames come from the base VB pool; VI's only own ION allocation is a 128 KiB CMDQ buffer per pipe.
+    evidence: vi.c:5322-5340 (SET_DMA_BUF_INFO), 115-140 (_mempool_pop), 405-522 (pool layout), 5573-5625 (GET_BUF_SIZE dry run), 41 & 5766-5800 (CMDQ ION); vi_sdk_layer.c:77-125 (vi_sdk_qbuf)
+    confidence: verified
+  -
+    finding: The CMDQ hardware is used only to atomically write ISP_TOP SW_CTRL_0/1 trigger registers; cmdq.c is 186 lines of generic packer code. The 10567-line vi_vreg_blocks.h 'vreg' shadow-register/CMDSET image is dead code for cv181x (zero references in VI .c files).
+    evidence: vi_drv.c:493-519; cmdq.c:22-33,144-171; isp_reg.h:163; grep 'VREG_|vreg' in vi/**/*.c = 0 (only comments vi_drv.h:416-417)
+    confidence: verified
+  -
+    finding: Sensor drivers are userspace; the kernel is only an I2C relay that fires queued register bursts at SOF/vblank via snsr_i2c through the base callback bus, plus sensor geometry pushed by ioctl.
+    evidence: vi_snsr.h:69-158; vi.c:5159-5226, 1828-1950, 7248-7262; kapi/snsr_i2c.h:30-35; snsr_i2c/common/snsr_i2c.c i2c_transfer at 73-296
+    confidence: verified
+  -
+    finding: Clocks: 11 con-id clocks (clk_sys_0..3, clk_axi, clk_csi_be, clk_raw, clk_isp_top, clk_csi_mac0..2); mainline sophgo,cv1800.h has matching VIP ids except no obvious 'clk_raw'. Reset is done via base's VIP_SYS registers and ISP_TOP SW_RST, not via a reset controller.
+    evidence: vi_interfaces.h:10-18; vi_core.c:148-184; include/dt-bindings/clock/sophgo,cv1800.h:99-132; vi.c:4439-4444; vip_sys.c:64-68; reg_vip_sys.h:62-65; vi_subsys_ctrl.c:521-545; cv18xx-reset.h:13 (RST_VIPSYS only)
+    confidence: verified
+  -
+    finding: LOC split: register programming 9046 .c lines (+1056 header) and 28319 register-description header lines are portable as-is; kernel glue 11814 .c lines (+2069 header) and 3094 uAPI header lines are what a mainline port rewrites. vip/*_ip_ctrl.c have essentially no kernel-API dependencies.
+    evidence: wc -l over vi/ and include/ (reported numbers); grep of kernel-API tokens in vip/*.c: 0 hits in 5 files, 2 in vi_drv.c/vi_fe/vi_rgb, 14 in vi_tun_ip_ctrl.c, 6 in vi_perf_chk.c
+    confidence: verified
+  -
+    finding: rtos_cmdqu/fast_image (FreeRTOS second-core fast boot: mailbox command queue, ISP/JPEG/VPU IRQ hand-over, shared ION buffers) are optional: VI has no symbol dependency on them; mainline already has a cv1800b mailbox driver and binding but no DTS node.
+    evidence: grep rtos|fast_image|cmdqu in vi/ = 0; fast_image.c:80-105,664-666,765-780; rtos_cmdqu.c:560-583,629-631; drivers/mailbox/cv1800-mailbox.c:157; Documentation/devicetree/bindings/mailbox/sophgo,cv1800b-mailbox.yaml; grep 'mailbox' in arch/riscv/boot/dts/sophgo = 0
+    confidence: verified
+  -
+    finding: Vendor 5.10 kernel pieces VI transitively needs that mainline lacks: ION (removed 5.11), exported arch_sync_dma_for_device, exported sched_setscheduler, streamline_annotate.h. Mainline does provide T-Head CMO non-coherent DMA support and dma-heaps.
+    evidence: sys.c:116-180,376-394; arch/riscv/mm/dma-mapping.c:45,61 (vendor); kernel/sched/syscalls.c:817 vs vendor core.c:5521; vi.h:16; arch/riscv/errata/thead/errata.c:74-95; drivers/dma-buf/heaps/
+    confidence: verified
+  -
+    finding: No ISP/CSI/VIP camera driver for CV18xx/SG2000 has appeared on linux-media as far as web search shows (only ASoC/I2S series in 2026); lore.kernel.org and patchwork.linuxtv.org were blocked by the egress proxy so this is based on search snippets only.
+    evidence: WebSearch results (ratatoskr.run ASoC threads, LWN 1054897, cnx-software); WebFetch to lore.kernel.org and patchwork.linuxtv.org returned EGRESS_BLOCKED
+    confidence: likely
+  -
+    finding: Mainline comparison: rkisp1 is 12.6k lines incl. a 1727-line params uAPI header; c3-isp ~4.1k lines; pisp_be 1.8k lines (M2M, per-job config META_OUTPUT). The CVITEK double-buffered per-block 'update' tuning design maps directly to RKISP1-style extensible params, and its DMA'd stats memblocks to META_CAPTURE.
+    evidence: wc -l drivers/media/platform/rockchip/rkisp1/*, include/uapi/linux/rkisp1-config.h; rkisp1-params.c:2338,2819,1736-2120; rkisp1-stats.c:163,379; c3-isp-params.c:729; pisp_be.c:126,196-208,360; vi_tun_cfg.h:1432-1448
+    confidence: verified
+open_questions:
+  - Board DTS is unavailable: exact ISP IRQ number, reg window size, and which sophgo,cv1800.h clock corresponds to the vendor 'clk_raw' con-id are unverified.
+  - Physical addresses of the bandwidth-limiter registers (bwladdr[] in vi.c:2790) and whether they belong to VIP_SYS or an AXI QoS block.
+  - How the closed middleware maps the kzalloc'd tuning buffers given only a physical address (likely /dev/mem; vendor CONFIG_STRICT_DEVMEM state unknown since no cv181x defconfig is in the kernel repo).
+  - Whether CVITEK/Sophgo middleware sources (libisp/3A, libsys, sensor drivers; e.g. a 'cvi_mpi' repository) are open and rebuildable against a changed ION/DMA uAPI — github.com was unreachable.
+  - Cache policy of the userspace-allocated ISP pool (cached vs uncached ION) and which ION flush/invalidate ioctls the middleware relies on, needed to reproduce coherency on mainline's dma-noncoherent path.
+  - Whether any product requirement depends on FreeRTOS fast-boot ISP (fast_image/rtos_cmdqu) or on ISP->VPSS online mode; both strongly influence option B's media-graph design.
+  - Availability of ISP register documentation beyond the generated headers (needed for a maintainable V4L2 driver and for 3A algorithm development).
+  - Upstream status: no CV18xx camera/ISP series found via search snippets; lore/patchwork direct checks were blocked, so a current in-flight series cannot be ruled out.
+loc_total: 23985

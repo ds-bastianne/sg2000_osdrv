@@ -1,0 +1,215 @@
+Phase-1 reader report: sys-base (generated 2026-10-06; evidence as file:line in the named repository; see docs/sg2000-kernel-port-plan.md)
+
+scope: Foundation modules of Sophgo/CVITEK osdrv interdrv/v2 (CV181x/SG2000 build, CVIARCH=CV181X): sys (cv181x_sys.ko = ION-backed allocator + cache ops + module bind graph + VI/VPSS mode control; files /home/user/sg2000_osdrv/interdrv/v2/sys/common/{sys.c,sys_context.c,sys_context.h,uapi/sys.h}), base (cv181x_base.ko = VB pool, per-channel job queues, inter-module callback bus, VIP_SYS clk/reset register accessors, chip-id/efuse/power-on-reason, procfs/sysfs; files /home/user/sg2000_osdrv/interdrv/v2/base/{base.c,base_context.c,vb.c,reg.c,cvi_*_proc.c,chip/cv181x/vip_sys.c,reg_vip_sys.h,vip_common.h}) and the shared kernel-API headers /home/user/sg2000_osdrv/interdrv/v2/include/common/kapi/*.h. Also checked: vendor 5.10 ION/efuse/dma-mapping that these modules link against, and mainline 7.3 DMA/dma-buf/heaps/reset/DTS infrastructure. Test-only files (sys_test.c, vb_test.c) are built only when INTRERDRV_FLAGS/DRV_TEST is set (sys/Makefile:24-26, base/Makefile:12-14) and were not analysed.
+kernel_interface: Two misc devices, no V4L2/DRM. (1) /dev/cvi-sys (sys.c:26, misc_register sys.c:859-863; of compatible "cvitek,sys" sys.c:915): unlocked_ioctl only, no mmap (fops sys.c:845-853). Magic 'S' (include/common/uapi/linux/sys_uapi.h:10). 11 handled top-level ioctls (sys.c:759-797): SYS_ION_ALLOC/SYS_ION_FREE (phys addr + dmabuf fd + 32-char name, struct sys_ion_data sys_uapi.h:57-64), SYS_CACHE_INVLD/SYS_CACHE_FLUSH (by phys addr, struct sys_cache_op sys_uapi.h:50-55), SYS_INIT_USER/SYS_EXIT_USER (no-ops sys.c:271-279), SYS_GET_SYSINFO, SYS_SET_BINDCFG/SYS_GET_BINDCFG, SYS_IOC_G_CTRL/SYS_IOC_S_CTRL multiplexing 8 sub-ids (VIVPSSMODE, VPSSMODE, VPSSMODE_EX, SYS_INIT get/set; sys_uapi.h:28-38, sys.c:588-724). SYS_SET/GET_MODECFG are defined (sys_uapi.h:20-21) but not handled. Last close releases all binds (sys.c:813-833). (2) /dev/cvi-base (base.c:43, misc_register base.c:638-646; compatible "cvitek,base" base.c:917): 8 ioctl numbers (9 defines, STATESIG32 shares nr 3) in include/common/uapi/linux/cvi_base.h:91-99: READ_CHIP_ID, READ_CHIP_VERSION, STATESIG(32) (register a signal for suspend/resume state change, delivered via kill_pid_usb_asyncio base.c:459-491), READ_STATE, USER_SUSPEND_DONE, USER_RESUME_DONE, READ_CHIP_PWR_ON_REASON, IOCTL_VB_CMD which multiplexes 16 VB sub-commands (vb_uapi.h:13-29; dispatcher vb_ctrl vb.c:991-1205: SET/GET_CONFIG, INIT, EXIT, CREATE_POOL, CREATE_EX_POOL, DESTROY_POOL, PHYS_TO_HANDLE, GET_BLK_INFO, GET_POOL_CFG, GET_BLOCK, RELEASE_BLOCK, GET_POOL_MAX_CNT, PRINT_POOL, UNIT_TEST, GET_VB_INIT). base mmap maps a kzalloc'd page-aligned shared_mem (BASE_SHARE_MEM_SIZE, cvi_base_ctx.h:15-23: per-module log levels, bind info, MMF version) with remap_pfn_range (base.c:492-514, 837). procfs: /proc/cvitek/{vb,log,sys,power} (base.c:841, cvi_vb_proc.c:3, cvi_log_proc.c:4, cvi_sys_proc.c:3, base.c:655). sysfs class cvi-base attributes base_efuse_shadow, base_efuse_prog, base_uid, base_rosc (base.c:952-970). VB_BLK handles returned to userspace are raw kernel pointers (struct vb_s *) cast to u64 (base_ctx.h:9-14; vb.c:495, 1094, 1124). Kernel-side API: EXPORT_SYMBOL_GPL of 17 sys symbols (sys.c:302-546, sys_context.c:36-42) and ~55 base symbols (vb.c, base_context.c, base.c:348-1119, vip_sys.c:16-119).
+hw_blocks:
+  - VIP_SYS top-level control block (resets, clk gates/low-power, AXI realtime/offline switch, clock dividers, QoS, interrupt status) - register map base/chip/cv181x/reg_vip_sys.h:8-57 (VIP_RESETS 0x0, VIP_INT 0x8, VIP_AXI_SW 0x10, VIP_CLK_LP 0x14, VIP_CLK_CTRL0 0x18, CLK_RATIO_* 0x30-0x48, RESETS1 0xc0); physical base inferred as 0x0A0C8000 from cif/chip/cv181x/cif.c:2341 ioremap(0x0a0c8018) (=VIP_CLK_CTRL0) and vpss/chip/cv181x/scaler.c:4632 ioremap(0x0A0C8070) (=AXI_RT_FAB_PRI_OW 0x70); base maps it from its single DT reg (base.c:865-874) and VO maps the same block as reg index 1 (vo/chip/cv181x/vo.c:2387, vo/common/vo_core.c:172-173)
+  - TOP misc registers at 0x03000000 (hardcoded ioremap base.c:46-47, 943): chip version at +0x0 (base.c:354), chip id GP_REG3 at +0x8C (base.c:48, 295)
+  - RTC control at 0x05026000 (+0xF8 ST_ON_REASON) for power-on reason (base.c:52-54, 377, 982-985)
+  - Ring-oscillator block at 0x030D0000 (sysfs base_rosc, base.c:184-239)
+  - eFuse (via vendor cvi_efuse_* API only; vendor driver maps 0x03050000, sg2000_linux_5.10/drivers/efuse/cv181x_efuse.c:16,159)
+  - Reserved DRAM carveout for ION ('ion-region' reserved-memory, vendor cvitek_ion.c:568) - all VB pools and module buffers come from here
+dt_expectations:
+  compatibles:
+    - cvitek,sys (sys.c:914-918) - pseudo device, no reg/clk/irq
+    - cvitek,base (base.c:917) - one reg = VIP_SYS block
+    - cvitek,cvitek-ion (vendor sg2000_linux_5.10/drivers/staging/android/ion/cvitek/cvitek_ion.c:507) with child heap node compatible cvitek,carveout (cvitek_ion.c:67-68) - sys allocates only ION_HEAP_TYPE_CARVEOUT (sys.c:57,126)
+    - reserved-memory node compatible ion-region (RESERVEDMEM_OF_DECLARE cvitek_ion.c:568, rmem_ion_device_init sets heap base/size cvitek_ion.c:535-544)
+    - cvitek,rtos_image with property ion-size (ion_carveout_heap.c:123-129; carveout heap subtracts RTOS share)
+  reg_names_or_count: base: exactly 1 IORESOURCE_MEM (platform_get_resource index 0, base.c:865) = VIP_SYS registers (offsets up to 0xe0 used, reg_vip_sys.h:57); size in board DTS unverified (board DTS not in repos). sys: none. Plus hardcoded ioremaps outside DT: 0x03000000/0x10000 (base.c:46-47,943), 0x05026000/0x140 (base.c:52-53,983), 0x030D0000/0x2028 (base.c:184,215).
+  clock_names:
+    - none in sys/base (no clk_get calls; grep of base/ sys/). Consumers fetch their own named clocks: VI clk_sys/clk_isp/clk_mac arrays (vi/common/vi_core.c:160-176), VPSS clk_sys[]/clk_sc_top/img/sc clocks (vpss/chip/cv181x/vpss_core.c:1458-1464, cvi_vip_sc.c:392, cvi_vip_img.c:273), VO clk_disp/clk_bt/clk_dsi (vo/common/vo_core.c:127-137)
+  irq_names:
+    - none (no request_irq in sys/ or base/; VIP_SYS_VIP_INT is only read via vip_get_intr_status vip_sys.c:85-92, which has no external users)
+  reset_handling: Not via reset-controller. base exports vip_toggle_reset()/vip_get_reset()/vip_set_reset() which read-modify-write VIP_SYS_VIP_RESETS (offset 0x0) directly with a 20us pulse under a spinlock (vip_sys.c:48-83). Bit map (vip_common.h:26-61): isp_top, img_d, img_v, sc_top, sc_d, sc_v1..v3, disp, bt, dsi_mac, csi_mac0..2, ldc, clk_div, *_apb variants, dsi_phy, csi_phy0, csi_be. External users: vip_toggle_reset 7 call sites (cif 1, dwa 1, vi 1, vpss 2 .c files; e.g. vi/chip/cv181x/vi.c:4444, vpss/common/vpss.c:2669), vip_get_reset/vip_set_reset in vi. Clock gating/dividers also written directly: vip_sys_reg_write_mask 11 call sites (vi.c:2489-2495 CSI_MAC0 dividers, vi.c:4850, dsi_phy.c:256-259,338 VIP_CLK_CTRL0 DSI mux), vip_sys_reg_read 3. Mainline reset header exposes only RST_VIPSYS (6) and RST_VIP_CAM0 (99) (mainline arch/riscv/boot/dts/sophgo/cv18xx-reset.h:13,80); none of the VIP_SYS-internal resets exist in mainline, and no mainline DTS/clk file references 0x0a0c8000 (grep of arch/riscv/boot/dts/sophgo, drivers/clk/sophgo).
+  gpios_and_misc_props:
+    - none in sys/base
+    - base probe sets AXI offline/realtime attributes at boot: SC_TOP offline, ISP_RAW offline, ISP_YUV realtime (base.c:876-878, vip_sys.c:112-119)
+    - module params: vb_max_pools=512, vb_pool_max_blk=64 (vb.c:11-14), base_log_lv (base.c:95-96), ion_debug_alloc_free (sys.c:45-46)
+  reserved_memory_or_ion: Everything contiguous comes from vendor ION carveout heap: sys_ion_alloc -> cvi_ion_alloc(ION_HEAP_TYPE_CARVEOUT, len, is_cached) (sys.c:126) -> vendor _cvi_ion_alloc picks first heap of that type (cvitek_ion_alloc.c:22-75) -> ion_alloc installs a dma-buf fd into the CURRENT process (vendor ion.c:530/669 dma_buf_fd(dmabuf, O_CLOEXEC)); kernel vaddr comes from ion_buffer->vaddr after ion_buf_begin_cpu_access (sys.c:71-78, 148-156; vendor ion.c:397-426 kmap via vmap, cached or writecombine per ION_FLAG_CACHED ion_heap.c:38-48). Free closes the fd with ksys_close(fd) in the current task regardless of fd_pid (vendor ion.c:986-990). A 100-entry phys->(fd,vaddr,dmabuf,pid) table tracks live allocations (sys_context.c:11,33,62-120). VB pools: one ION allocation per pool, blk_size*blk_cnt (vb.c:217-226); VB_STATIC_POOLID allocates per block (vb.c:445-459); external pools accept arbitrary phys addrs (vb.c:267-310, vb_uapi.h:49-53). ION heap also used directly (bypassing sys) by tpu, fast_image, dwa ldc_test, vcodec jdi.h/vdi.h (grep interdrv/v2).
+depends_on_modules:
+  - sys depends on: nothing in osdrv; vendor kernel built-ins ion+ion/cvitek (cvi_ion_* exports) and arch_sync_dma_for_device export
+  - base depends on: sys (KBUILD_EXTRA_SYMBOLS base/Makefile:38; uses sys_ion_alloc/free, sys_get_chipid, sys_get_modname, sys_get_bindbysrc, sys_save_modules_cb, venc_vb_ctx/vdec_vb_ctx) and vendor efuse driver (cvi_efuse_*)
+  - Users of sys exports (modules): base, vi, vpss, vo, rgn, ive, dwa, fast_image, cvi_vc_drv (sys_ion_alloc 17 call sites, sys_ion_free 25, sys_ion_alloc_nofd/free_nofd 3+3 in cvi_vc_drv, sys_cache_flush 7, sys_cache_invalidate 5, sys_get_bindbysrc in base/cvi_vc_drv/dwa/vpss)
+  - Users of base exports (modules): vi, vpss, vo, cif, dwa, rgn, ive, fb, rtos_cmdqu, cvi_vc_drv, snsr_i2c (vip_sys_register_cmm_cb). Call-site counts outside base/: vb_release_block 51, base_exe_module_cb 20, vb_get_block_with_id 18, vb_physAddr2Handle 18, vb_done_handler 14, vip_sys_reg_write_mask 11, base_mod_jobs_init 9, vb_handle2PhysAddr 9, vb_qbuf 8, base_reg_module_cb 8, vip_toggle_reset 7, base_get_frame_info 7
+vendor_kernel_only_deps:
+  -
+    symbol_or_header: cvi_ion_alloc / cvi_ion_free / cvi_ion_alloc_nofd / cvi_ion_free_nofd / ion_buf_begin_cpu_access / ion_buf_end_cpu_access, headers ion/ion.h and ion/cvitek/cvitek_ion_alloc.h, struct ion_buffer fields paddr/vaddr/name
+    call_sites: 15
+    evidence: sys.c:57,71,74,82,84,126,135,148,152,161,176,232,265,266; sys/common/uapi/sys.h:9-10; Makefiles add -I$(srctree)/drivers/staging/android (sys/Makefile:11, base/Makefile:27). Vendor definitions: sg2000_linux_5.10/drivers/staging/android/ion/cvitek/cvitek_ion_alloc.c:77-116 (EXPORT_SYMBOL), ion.h:76-81 (vaddr, paddr, name are vendor-added fields). Mainline 7.3 has no drivers/staging/android at all (ls).
+    replacement_in_mainline: No drop-in. Options: (a) kernel-side allocation on a platform device with memory-region: of_reserved_mem_device_init_by_idx (EXPORT_SYMBOL_GPL mainline drivers/of/of_reserved_mem.c:750) + dma_alloc_attrs (kernel/dma/mapping.c:684) or cma_alloc/cma_release (mm/cma.c:960,1040) + dma_buf_export (include/linux/dma-buf.h:567) to keep returning a dmabuf fd; (b) userspace allocates from /dev/dma_heap/<cma-name> (DMA_HEAP_IOCTL_ALLOC include/uapi/linux/dma-heap.h:50) and imports fds. Note: mainline dma-heap has NO in-kernel allocation API (include/linux/dma-heap.h:43-47 only dma_heap_add/get_drvdata/get_name).
+  -
+    symbol_or_header: arch_sync_dma_for_device (exported by vendor kernel, not by mainline)
+    call_sites: 4
+    evidence: sys.c:378, 388, 408, 410 (sys_cache_invalidate/sys_cache_flush/ioctl path). Vendor export: sg2000_linux_5.10/arch/riscv/mm/dma-mapping.c:45,61 (EXPORT_SYMBOL_GPL of arch_sync_dma_for_device/for_cpu; implemented with dma_wb_range/dma_wbinv_range = th.dcache.cpa/cipa, arch/riscv/mm/cacheflush.c:93-114). Mainline arch/riscv/mm/dma-noncoherent.c exports only dma_cache_alignment (line 16); grep of arch/riscv/mm for EXPORT_SYMBOL shows no arch_sync_dma_* export.
+    replacement_in_mainline: dma_sync_single_for_device/for_cpu (inline include/linux/dma-mapping.h:443-450 -> exported __dma_sync_single_for_cpu/device kernel/dma/mapping.c:393,410) on a struct device under the dma-noncoherent soc node (mainline sg2000.dtsi:21), or dma_buf_begin/end_cpu_access on the buffer. Semantic difference: vendor 'invalidate' = clean+invalidate in for_device(FROM_DEVICE) (vendor dma-mapping.c:37-39); mainline for_device(FROM_DEVICE) only cleans (dma-noncoherent.c:69-95, arch_sync_dma_clean_before_fromdevice()=true at :56-59) and invalidates in for_cpu (dma-noncoherent.c:98-113). So SYS_CACHE_INVLD must map to dma_sync_single_for_cpu(DMA_FROM_DEVICE).
+  -
+    symbol_or_header: cvi_efuse_read_buf / cvi_efuse_write / cvi_efuse_read_from_shadow (include/linux/cv180x_efuse.h)
+    call_sites: 5
+    evidence: base.c:36 include; base.c:106,127,155,170,171 (sysfs base_efuse_shadow/prog/uid). Vendor exports: sg2000_linux_5.10/drivers/efuse/cv181x_efuse.c:200,232,261. Mainline: no sophgo/cv18xx nvmem driver (ls drivers/nvmem; drivers/soc/sophgo has only cv1800-rtcsys.c and sg2044-topsys.c) and no efuse node at 0x03050000 in arch/riscv/boot/dts/sophgo.
+    replacement_in_mainline: Drop the 3 debug sysfs attributes, or write a small nvmem provider for the eFuse block at 0x03050000 and read via nvmem_cell/regmap. Not needed for VI/VO function.
+  -
+    symbol_or_header: tee_cv_private.h (drivers/tee in vendor tree)
+    call_sites: 0
+    evidence: base.c:24 include; base/Makefile:24 adds -I$(srctree)/drivers/tee; grep shows no tee_* symbol used in base.c.
+    replacement_in_mainline: Remove the include.
+  -
+    symbol_or_header: generated/compile.h (UTS_VERSION)
+    call_sites: 2
+    evidence: included twice by base proc files (header inventory of base/*.c); used in cvi_sys_proc.c:64. Mainline moved UTS_VERSION to include/generated/utsversion.h (init/Makefile:56-62).
+    replacement_in_mainline: Include <generated/utsversion.h> or print init_utsname()->version.
+  -
+    symbol_or_header: Hardcoded ioremap of TOP (0x03000000), RTC (0x05026000), ROSC (0x030D0000) outside DT
+    call_sites: 4
+    evidence: base.c:943, 983/985, 184, 215. Mainline already describes 0x03000000 as syscon 'sophgo,cv1800b-top-syscon' (cv180x.dtsi:28-31) and 0x05025000 size 0x2000 (covers 0x05026000) as 'sophgo,cv1800b-rtc','syscon' (cv180x.dtsi:469-471).
+    replacement_in_mainline: syscon_regmap_lookup_by_phandle/compatible + regmap_read for chip id/version and power-on reason; ioremap still compiles but double-maps syscon ranges.
+userspace_contract: Vendor MMF middleware (not in the repos; its behaviour below is inferred from the kernel side) is mandatory: it (1) calls VB_IOCTL_SET_CONFIG/INIT/CREATE_POOL to create ION-backed pools and receives only the pool's physical base (struct cvi_vb_pool_cfg.mem_base, vb_uapi.h:40-47; vb.c:226) and VB_BLK handles that are raw kernel pointers (vb.c:495,1094); (2) allocates its own buffers through SYS_ION_ALLOC receiving phys addr + a dma-buf fd it can mmap (sys.c:362-363; vendor ion_mmap applies writecombine unless ION_FLAG_CACHED, vendor ion.c:302-314); (3) performs cache maintenance itself by physical address via SYS_CACHE_INVLD/FLUSH (sys.c:396-415); (4) builds the processing graph with SYS_SET_BINDCFG (MMF_CHN_S src -> up to 32 dsts, cvi_comm_sys.h:20-26; sys_context.c:164-240) which the kernel then uses to forward frames between VI/VPSS/VO/VENC in vb_done_handler (base_context.c:773-805); (5) sets VI-VPSS online/offline and VPSS single/dual mode via SYS_IOC_S_CTRL which fans out to VI/VPSS kernel callbacks (sys.c:599-655); (6) mmaps /dev/cvi-base shared memory for per-module log levels/version (base.c:492-514). All 3A/ISP tuning, panel init and codec control live in that middleware and the other osdrv modules, not in sys/base. Binary compatibility: any change to VB_BLK semantics, phys-addr-based ABI, or ioctl structs breaks the closed middleware; keeping ABI requires the kernel to keep returning stable physical addresses and a dmabuf fd per allocation. How the middleware maps VB pool memory (via the SYS_ION_ALLOC fd installed into its process by the kernel-internal allocation, or via /dev/mem) is unverified. Note the vendor fd lifecycle: kernel-internal pool allocations install a dma-buf fd into whichever process issued the ioctl (vendor ion.c:530,669) and free closes an fd in the current task (vendor ion.c:986-990).
+api_breakages_5_10_to_7_3:
+  -
+    api: ION allocator (cvi_ion_*, struct ion_buffer->paddr/vaddr/name, ion_buf_begin/end_cpu_access)
+    what_changed: ION removed from mainline (no drivers/staging/android in 7.3); replacement is dma-buf heaps (userspace-facing only) + CMA/dma_alloc_attrs for kernel-side allocation.
+    fix: Rewrite _sys_ion_alloc/_free(_nofd) (sys.c:48-269) on top of of_reserved_mem_device_init + dma_alloc_attrs or cma_alloc, export each allocation with dma_buf_export so SYS_ION_ALLOC still returns a dmabuf fd; keep sys_ion_alloc()/sys_ion_free() kernel API signatures so the 48 external call sites (17+25+3+3) do not change.
+    severity: hard
+    call_sites: 15
+  -
+    api: arch_sync_dma_for_device
+    what_changed: Not exported to modules in mainline (arch/riscv/mm/dma-noncoherent.c has no EXPORT_SYMBOL for it); FROM_DEVICE direction semantics changed to clean-only in for_device.
+    fix: Use dma_sync_single_for_device(dev, paddr, len, DMA_TO_DEVICE) for flush and dma_sync_single_for_cpu(dev, paddr, len, DMA_FROM_DEVICE) for invalidate on the cvi-sys platform device (needs its DT node under the dma-noncoherent soc node); sys.c:376-415.
+    severity: moderate
+    call_sites: 4
+  -
+    api: compat_ptr_ioctl local static definition
+    what_changed: Kernel exports a function of the same name (include/linux/fs.h:1824) and riscv CONFIG_COMPAT defaults to y on 64BIT (arch/riscv/Kconfig:1136-1138), so the static redefinition in sys.c:835-843 and base.c:617-626 fails to compile when COMPAT is enabled.
+    fix: Delete both local definitions and set .compat_ioctl = compat_ptr_ioctl.
+    severity: trivial
+    call_sites: 2
+  -
+    api: class_create(THIS_MODULE, name)
+    what_changed: Signature is class_create(const char *name) (mainline include/linux/device/class.h:226).
+    fix: base.c:945 drop the owner argument.
+    severity: trivial
+    call_sites: 1
+  -
+    api: struct class_attribute show/store callbacks
+    what_changed: Take const struct class * and const struct class_attribute * (class.h:167-173).
+    fix: Add const to the 8 callbacks base.c:99-243 (base_efuse_shadow/prog, base_uid, base_rosc show/store).
+    severity: trivial
+    call_sites: 8
+  -
+    api: platform_driver.remove
+    what_changed: Returns void (mainline include/linux/platform_device.h:280).
+    fix: sys.c:902-912 and base.c:896 change return type to void.
+    severity: trivial
+    call_sites: 2
+  -
+    api: security_task_getsecid(current, &secid)
+    what_changed: Removed; mainline has security_task_getlsmprop_obj/security_current_getlsmprop_subj with struct lsm_prop (include/linux/security.h:525-526).
+    fix: base.c:422: drop the call (ps->secid is only used in the <4.10 path) and remove the secid field.
+    severity: trivial
+    call_sites: 1
+  -
+    api: UTS_VERSION via generated/compile.h
+    what_changed: Moved to include/generated/utsversion.h (init/Makefile:56-62).
+    fix: cvi_sys_proc.c: include utsversion.h or use init_utsname()->version.
+    severity: trivial
+    call_sites: 2
+  -
+    api: -Wall -Wextra -Werror ccflags with newer GCC
+    what_changed: Unverified: constructs such as strncat(str, ..., sizeof(str)) (vb.c:126) and unused-but-set patterns may trip newer -Werror diagnostics; not compiled in this pass.
+    fix: Drop -Werror for the first build, then fix warnings.
+    severity: trivial
+    call_sites: 1
+mainline_framework_fit: sys/base have no single mainline equivalent; they are a Hi3516-style MPP 'SYS+VB' layer. Mapping: (1) VB pool + per-channel waitq/workq/doneq (base_ctx.h:230-239, base_context.c:649-805) corresponds to videobuf2 queues in V4L2 (vb2 with V4L2_MEMORY_MMAP/DMABUF) and to GEM/dma-buf framebuffers in DRM; the cross-module 'common pool' corresponds to dma-buf heaps: mainline cma_heap registers the default CMA area and every DT reserved-memory node with 'shared-dma-pool'+'reusable' as /dev/dma_heap/<name> (drivers/dma-buf/heaps/cma_heap.c:397-421; kernel/dma/contiguous.c:507-589). (2) The bind graph (sys_context.c:164-317) corresponds to media-controller links between V4L2 subdevs; kernel-internal frame forwarding in vb_done_handler would become userspace dma-buf fd passing (or an in-kernel media pipeline). (3) sys cache ops correspond to dma_buf_begin/end_cpu_access / vb2's dma-contig sync; userspace never needs physical addresses. (4) vip_sys.c corresponds to a syscon/simple-mfd node for 0x0A0C8000 plus a reset-simple (or syscon-reset) instance over VIP_SYS_VIP_RESETS and clk gates over VIP_CLK_LP/CLK_CTRL0; mainline clk-cv1800.c already models the VIP clock muxes/dividers in the main clock controller (drivers/clk/sophgo/clk-cv1800.c:626-647) but not the VIP_SYS-local registers, and cv18xx-reset.h has only RST_VIPSYS/RST_VIP_CAM0. (5) chip-id/power-on-reason map to regmap reads on the existing 'sophgo,cv1800b-top-syscon' and 'sophgo,cv1800b-rtc' syscon nodes (cv180x.dtsi:28-31, 469-471). Fit assessment: the hardware side (one register block, reserved DRAM, noncoherent DMA handled by ERRATA_THEAD_CMO arch/riscv/errata/thead/errata.c:74-123 with 'dma-noncoherent' in sg2000.dtsi:21) fits mainline infrastructure well; the driver structure (phys-addr ABI, kernel pointers as handles, cross-module callback bus base_cb.h:72-110 with 13 module ids and 20 external base_exe_module_cb call sites, cmd enums in kapi vi_cb.h/vpss_cb.h/vo_cb.h/dwa_cb.h/vcodec_cb.h) does not fit and would be deleted in a V4L2/DRM port. Reference files verified in /home/user/mainline_linux: drivers/dma-buf/heaps/cma_heap.c, include/linux/dma-heap.h, drivers/of/of_reserved_mem.c, mm/cma.c, kernel/dma/mapping.c, arch/riscv/mm/dma-noncoherent.c, arch/riscv/boot/dts/sophgo/cv18xx-reset.h. videobuf2-dma-contig and DRM GEM-DMA helpers were not opened in this pass (paths unverified).
+port_options:
+  -
+    name: A. Shim port: keep sys/base ABI, replace ION with CMA/dma-buf exporter
+    description: Keep /dev/cvi-sys and /dev/cvi-base ioctl ABI and all EXPORT_SYMBOL_GPL kernel APIs so vi/vpss/vo/... only need rebuilding. Give 'cvitek,sys' a DT node with memory-region -> a dedicated reserved-memory CMA pool; implement sys_ion_alloc via cma_alloc (or dma_alloc_attrs with DMA_ATTR_NO_KERNEL_MAPPING) + vmap with cached/writecombine pgprot to reproduce is_cached, wrap each allocation in dma_buf_export so SYS_ION_ALLOC still returns a dmabuf fd and phys addr; replace the 100-entry phys table with refcounted objects; implement SYS_CACHE_* with dma_sync_single_for_cpu/device on the sys device; fix the 7 trivial API breaks; read chip id/pwr-on via syscon regmap; drop efuse sysfs or add nvmem. vip_sys.c unchanged (still raw register access through base's reg).
+    effort_engineer_weeks: 3-5 engineer-weeks for sys+base only
+    assumptions: One engineer experienced with the Linux DMA/dma-buf API; SG2000 board available; vendor middleware kept as-is and shown to mmap buffers through the dma-buf fd rather than /dev/mem (unverified); the other osdrv modules are ported separately; mainline 'dma-noncoherent' + THEAD CMO path works on SG2000 as in sg2000.dtsi.
+    risks:
+      - Middleware may rely on phys-addr access via /dev/mem or on VB_BLK being a kernel pointer (unverified since middleware is not in the repos)
+      - Vendor fd semantics (fd installed into the ioctl caller, freed via ksys_close in current, vendor ion.c:530,986-990) are process-bound; a clean refcounted design changes observable behaviour (fd numbers, CLOEXEC)
+      - Cached pools: dma_alloc_attrs returns an uncached mapping on noncoherent SoC; cached kernel/user mappings need cma_alloc + custom vmap/mmap, and CPU/device coherence then depends on correct SYS_CACHE_* use by userspace
+      - Reserved-memory size/placement must match the RTOS/fast_image ION carve (ion_carveout_heap.c:123-129 subtracts rtos ion-size) if the RTOS core shares the pool
+      - VIP_SYS-internal resets remain outside the reset framework; dual mapping of the same block by base and vo (vo.c:2387) persists
+  -
+    name: B. VB on dma-buf: userspace allocates from dma-heaps, kernel VB imports fds
+    description: Keep the VB bookkeeping (vb_s hash, pools, job queues, bind graph, module callback bus) but stop allocating in the kernel. Middleware allocates pool memory from /dev/dma_heap/<cma-name> (DMA_HEAP_IOCTL_ALLOC) and registers it through an extended VB_IOCTL_CREATE_EX_POOL that takes dma-buf fds instead of raw phys addrs (vb.c:267-310 already supports externally-provided blocks); kernel does dma_buf_get/attach/map_attachment on the sys device to obtain the DMA address, and SYS_CACHE_* become dma_buf_begin/end_cpu_access. SYS_ION_ALLOC becomes a thin wrapper or is removed. VB_BLK handles become opaque ids (idr) instead of kernel pointers.
+    effort_engineer_weeks: 4-8 engineer-weeks (2-4 kernel sys/base, 2-4 middleware adaptation)
+    assumptions: Middleware source is available and can be modified (not present in these repos; unverified); all consumer modules keep using vb_*/base_* APIs unchanged; DT provides one or more CMA reserved-memory nodes; GPL kernel-side fd import on a dma-noncoherent device is acceptable performance-wise for the frame rates involved.
+    risks:
+      - Breaks binary compatibility with the closed vendor middleware and with any user code using SYS_ION_ALLOC phys addresses
+      - dma-buf attachment/map per pool at create time is fine, but per-frame cache ops through dma_buf_begin/end_cpu_access over whole pools are coarser than the current per-range phys ops (sys.c:396-415)
+      - Still a vendor-specific ABI; no path to upstream
+  -
+    name: C. Mainline-style replacement: delete sys/base, model VIP_SYS as syscon+reset+clk, buffers via dma-heaps/vb2/GEM
+    description: Remove the SYS/VB/bind-graph layer entirely. VIP_SYS becomes a syscon node at 0x0A0C8000 with a reset-controller (reset-simple over offset 0x0 using the bit map in vip_common.h:26-61) and clock gates (VIP_CLK_LP/CLK_CTRL0) with new DT bindings; chip id/pwr-on reason read from existing top/rtc syscons; eFuse via a new nvmem provider; contiguous memory via DT CMA reserved-memory exposed automatically as dma-heaps; VI/ISP, VPSS, VO consumers rewritten as V4L2 media-controller subdevs/vb2 and DRM/KMS, with the bind graph replaced by media links and userspace fd passing.
+    effort_engineer_weeks: 6-10 engineer-weeks for the foundation pieces alone (syscon/reset/clk-gate bindings and drivers for VIP_SYS, nvmem efuse, CMA/dma-heap DT, removal of sys/base and of every vb_*/base_*/vip_* call in consumers), excluding the V4L2/DRM rewrites of the consumer modules which dominate the total
+    assumptions: Goal is an upstreamable or at least mainline-idiomatic driver set; the vendor middleware is abandoned in favour of libcamera/V4L2/DRM userspace; register-level knowledge of VIP_SYS reset/clock bits (vip_common.h) is sufficient without further datasheet access.
+    risks:
+      - Every consumer module depends on base/sys (vb_release_block 51 call sites, base_exe_module_cb 20, vb_get_block_with_id 18, vip_sys_reg_write_mask 11, vip_toggle_reset 7): this option cannot be done for sys/base in isolation
+      - The inter-module callback protocol (vpss_cb.h 22 commands, vi_cb.h, vo_cb.h, dwa_cb.h, vcodec_cb.h) encodes hardware coupling (VI->VPSS online mode, DWA->VPSS slice-buffer mode, VENC slice-buffer flow) that has no direct V4L2 expression and would need careful redesign
+      - Vendor middleware (3A/ISP tuning, panel init) becomes unusable; libcamera/IPA for this ISP does not exist in the repos examined
+key_findings:
+  -
+    finding: All contiguous memory used by the whole osdrv stack flows through sys_ion_alloc -> vendor ION carveout heap; the physical address is handed to userspace and other modules as the primary buffer identity.
+    evidence: sys.c:57,126 cvi_ion_alloc(ION_HEAP_TYPE_CARVEOUT,...); sys.c:111,191,362 return paddr; vb.c:221-226 pool memBase; vb.c:252 blocks at memBase + i*blk_size; vb hash keyed by phys (vb.c:24,80,260); vendor heap table cvitek_ion.c:60-73, reserved-memory 'ion-region' cvitek_ion.c:535-568.
+    confidence: verified
+  -
+    finding: Mainline 7.3 does not export arch_sync_dma_for_device/for_cpu to modules, so sys_cache_flush/sys_cache_invalidate (and the SYS_CACHE_* ioctls) cannot be compiled as-is; dma_sync_single_* on a dma-noncoherent device is the replacement, with changed FROM_DEVICE semantics.
+    evidence: sys.c:376-415 uses arch_sync_dma_for_device; vendor export sg2000_linux_5.10/arch/riscv/mm/dma-mapping.c:45,61; mainline arch/riscv/mm/dma-noncoherent.c only EXPORT_SYMBOL_GPL(dma_cache_alignment) at line 16; mainline for_device(FROM_DEVICE) cleans only (dma-noncoherent.c:69-95 with :56-59 returning true), invalidate in for_cpu (:98-113); exported sync entry points kernel/dma/mapping.c:393,410.
+    confidence: verified
+  -
+    finding: Mainline dma-buf heaps expose no in-kernel allocation API, so a kernel-side VB pool cannot allocate from a heap; it must use CMA/dma_alloc_attrs directly or import userspace-allocated dma-buf fds.
+    evidence: include/linux/dma-heap.h:43-47 declares only dma_heap_get_drvdata, dma_heap_get_name, dma_heap_add; grep for dma_heap_buffer_alloc/dma_heap_find in include/ and drivers/dma-buf/ returns nothing; exported kernel allocators: cma_alloc mm/cma.c:960, dma_alloc_attrs kernel/dma/mapping.c:684, of_reserved_mem_device_init_by_idx drivers/of/of_reserved_mem.c:750.
+    confidence: verified
+  -
+    finding: Mainline's CMA heap automatically turns every DT reserved-memory node with 'shared-dma-pool'+'reusable' into /dev/dma_heap/<name>, which is the natural replacement for the ION 'carveout' heap from userspace.
+    evidence: drivers/dma-buf/heaps/cma_heap.c:397-421 iterates dev_get_cma_area(NULL) and dma_contiguous_get_area_by_idx(); kernel/dma/contiguous.c:507-589 (RESERVEDMEM_OF_DECLARE 'shared-dma-pool', checks 'reusable', 'linux,cma-default').
+    confidence: verified
+  -
+    finding: VB_BLK handles exposed to userspace are raw kernel pointers (struct vb_s *) and are dereferenced after a magic check; this is both a porting hazard and an ABI/security concern.
+    evidence: base_ctx.h:9-14 typedef uint64_t VB_BLK; vb.c:495 return (VB_BLK)p; vb.c:1094,1124 copy handle to user; vb.c:733,746-748 cast back and check magic 0xbabeface (vb.h:25).
+    confidence: verified
+  -
+    finding: The bind graph and per-channel job queues implement kernel-internal frame forwarding between modules (VI->VPSS->VO/VENC) that in mainline would be media-controller links or userspace fd passing.
+    evidence: sys_context.c:164-240 (bind nodes, 64 src x 32 dst per cvi_comm_sys.h:20-21); base_context.c:773-805 vb_done_handler calls sys_get_bindbysrc and vb_qbuf into each destination; base_ctx.h:230-239 vb_jobs_t waitq/workq/doneq; base_context.c:649-721 vb_qbuf triggers VPSS via base_exe_module_cb.
+    confidence: verified
+  -
+    finding: VIP_SYS (inferred base 0x0A0C8000) resets and clock controls are driven by raw register writes from base and from vi/vpss/cif/dwa/ive, not through the clk/reset frameworks; mainline reset-simple exposes only RST_VIPSYS and RST_VIP_CAM0 for this domain, so a new reset/clk-gate provider is required in any option that moves consumers to the frameworks.
+    evidence: vip_sys.c:48-83 vip_toggle_reset RMW on VIP_SYS_VIP_RESETS (reg_vip_sys.h:8); bit map vip_common.h:26-61; base.c:865-874 maps the block; address inferred from cif.c:2341 ioremap(0x0a0c8018) and scaler.c:4632 ioremap(0x0A0C8070); external call sites vip_toggle_reset 7, vip_sys_reg_write_mask 11; mainline cv18xx-reset.h:13,80; no 0x0a0c8000 in mainline sophgo DTS/clk.
+    confidence: verified
+  -
+    finding: The vendor ION fd lifecycle is process-bound: kernel-internal allocations (e.g. VB pool creation) install a dma-buf fd into the ioctl caller, and cvi_ion_free closes an fd in the current task ignoring fd_pid; any dma-buf based replacement must switch to refcounted kernel objects.
+    evidence: sys.c:126-139 cvi_ion_alloc + dma_buf_get(fd); sys.c:232 cvi_ion_free(mem_info.fd_pid, fd); vendor ion.c:530,669 dma_buf_fd(dmabuf, O_CLOEXEC); vendor ion.c:986-990 ion_free(pid, fd) { ksys_close(fd); }.
+    confidence: verified
+  -
+    finding: Compile-time breakages from 5.10 to 7.3 in sys/base are few and mechanical, except ION and cache ops: compat_ptr_ioctl redefinition (COMPAT defaults to y on rv64), class_create signature, const class_attribute callbacks, void platform remove, security_task_getsecid removal, UTS_VERSION header move.
+    evidence: sys.c:835-843 and base.c:617-626 vs include/linux/fs.h:1824 and arch/riscv/Kconfig:1136-1138; base.c:945 vs include/linux/device/class.h:226; base.c:99-243 vs class.h:167-173; sys.c:902, base.c:896 vs platform_device.h:280; base.c:422 vs include/linux/security.h:525-526; init/Makefile:56-62.
+    confidence: verified
+  -
+    finding: sys/base themselves need no clocks, IRQs or resets from DT; the only DT resources are one reg (VIP_SYS) for 'cvitek,base' and the ION reserved-memory for 'cvitek,cvitek-ion'; VI/VPSS/VO obtain their clocks by name through the clk framework (compatible with mainline clk-cv1800 names, mapping not checked here).
+    evidence: No clk_get/request_irq/reset_control in sys/ or base/ (grep); base.c:865 single platform_get_resource; vi_core.c:160-176, vpss_core.c:1458-1464, vo_core.c:127-137 devm_clk_get by name.
+    confidence: verified
+  -
+    finding: Chip identification and power-on reason are read from registers that mainline already models as syscon nodes, so they can be re-implemented with regmap without new bindings; eFuse-backed sysfs attributes have no mainline provider.
+    evidence: base.c:46-49,295,354 (TOP 0x03000000 +0x8C/+0x0), base.c:52-54,377 (RTC 0x05026000 +0xF8); mainline cv180x.dtsi:28-31 syscon@3000000, :469-471 rtc@5025000 reg size 0x2000; efuse API base.c:106-171 vs no sophgo entry in mainline drivers/nvmem.
+    confidence: verified
+  -
+    finding: Replacing ION with mainline CMA is feasible for sys/base in isolation (option A) because the ION dependency is confined to sys.c (15 call sites) behind the exported sys_ion_alloc/sys_ion_free API that 48 external call sites use unchanged.
+    evidence: sys.c:48-269 is the only ION code; external users counted by grep: sys_ion_alloc 17, sys_ion_free 25, sys_ion_alloc_nofd 3, sys_ion_free_nofd 3; direct cvi_ion_* use outside sys only in tpu, fast_image, dwa ldc_test, vcodec jdi.h/vdi.h.
+    confidence: verified
+  -
+    finding: Noncoherent DMA on SG2000 is supported in mainline through the T-Head CMO errata path and the soc-level dma-noncoherent property, so dma_sync_single_* / dma_alloc_attrs on a device under /soc will issue th.dcache.* operations like the vendor code.
+    evidence: mainline arch/riscv/errata/thead/errata.c:47-62 (th.dcache.ipa/cpa/cipa), :74-123 THEAD_CMO_OP and riscv_noncoherent_supported(); sg2000.dtsi:21 dma-noncoherent under soc; vendor equivalent cacheflush.c:93-114 dcache.cipa/cpa.
+    confidence: verified
+open_questions:
+  - How does the vendor middleware map VB pool memory into userspace: via the dma-buf fd that the kernel-internal sys_ion_alloc installs into the calling process, or via /dev/mem using mem_base? (middleware not in repos; VB_IOCTL_CREATE_POOL returns only mem_base, vb_uapi.h:40-47)
+  - Does any userspace component depend on VB_BLK handles being stable kernel pointers across processes (e.g. passed between middleware processes)?
+  - Exact VIP_SYS reg size and the ION reserved-memory layout (ion-region base/size, RTOS 'ion-size' share) in the SG2000 board DTS - the SDK 'build' repo with DTS files is not available
+  - Does the RTOS/fast_image path require a no-map carveout at a fixed address (ion_carveout_heap.c:123-129), which would prevent using a 'reusable' CMA pool for the same region?
+  - Whether the mainline T-Head CMO path sets riscv_cbom_block_size correctly for the C906 in SG2000 (errata.c:122 uses L1_CACHE_BYTES) and whether its performance is acceptable for per-frame cache maintenance
+  - Whether vendor middleware tolerates the semantic change of SYS_CACHE_INVLD from clean+invalidate (vendor) to pure invalidate (mainline for_cpu FROM_DEVICE)
+  - Whether the vi/vpss/vo clock-name strings match mainline clk-cv1800 DT clock ids (not checked in this pass; consumer modules out of scope here)
+  - Build cleanliness with -Wall -Wextra -Werror on the toolchain used for 7.3 (not compiled in this pass)
+loc_total: 8851
