@@ -1,0 +1,243 @@
+Phase-1 reader report: cif-snsr (generated 2026-10-06; evidence as file:line in the named repository; see docs/sg2000-kernel-port-plan.md)
+
+scope: Camera front-end of the SG2000/CV181x osdrv suite: /home/user/sg2000_osdrv/interdrv/v2/cif (module cvi_mipi_rx.ko: cif.c 3459 LOC, drv/cif_drv.c 1711, drv/cif_drv.h 542, cif.h 67, drv/inc/* register maps 3445) and /home/user/sg2000_osdrv/interdrv/v2/snsr_i2c (snsr_i2c.ko: common/snsr_i2c.c 494), plus their uAPI/kAPI headers include/chip/cv181x/uapi/linux/cif_uapi.h (400), vi_snsr.h (158), include/common/kapi/{cif_cb.h,snsr_i2c.h}. Cross-checked against the vendor 5.10 kernel (/home/user/sg2000_linux_5.10) for vendor-only symbols and against mainline 7.3-rc6 (/home/user/mainline_linux) for API status and reference V4L2 CSI-2 receiver drivers. Board DTS was not available; DT expectations are inferred from probe code. Middleware (libsns/libisp) is not in the repo; statements about it are marked likely/unverified.
+kernel_interface: cif: one misc char device /dev/cvi-mipi-rx (MIPI_RX_DEV_NAME, cif.c:54; misc_register cif.c:2718-2721) with unlocked_ioctl + compat_ioctl only, no read/write/mmap/poll (cif_fops cif.c:2683-2690; open/release are empty stubs cif.c:2672-2680). ioctl magic 'm' (cif_uapi.h:331); 26 commands defined, 17 marked "Support" and actually dispatched in _cif_ioctl (cif.c:2405-2656: SET_DEV_ATTR, SET_OUTPUT_CLK_EDGE, RESET_MIPI, SET_CROP_TOP, SET_CROP_WINDOW, SET_WDR_MANUAL, SET_LVDS_FP_VS, RESET_SENSOR, UNRESET_SENSOR, ENABLE/DISABLE_SENSOR_CLOCK, RESET_LVDS, GET_CIF_ATTR, SET_BT_FMT_OUT, SET_SENSOR_CLOCK, SET_MAX_MAC_CLOCK, SET_YUV_SWAP), 9 declared "Unsupport" (cif_uapi.h:378-397) and returned as -ENOIOCTLCMD. There is no explicit stream-on: CVI_MIPI_SET_DEV_ATTR configures and immediately enables the receiver (cif_streaming(ctx,1,hdr_en) at the end of _cif_set_attr_mipi, cif.c:637-638). procfs: /proc/mipi-rx (proc_create_data cif.c:3287) with a status dump (dev attr, CSI error counters, D-PHY lane state) and a write-side debug command parser (dbg_hdler cif.c:3086-3210). In-kernel interface: registers itself in the osdrv 'base' callback table as E_MODULE_CIF (cif_register_cb cif.c:2702-2711) so the vi module can call the same ioctl switch with from_user=0 (cif_cb cif.c:2692-2695): CIF_CB_RESET_LVDS, CIF_CB_GET_CIF_ATTR (returns stagger_vsync = VC-HDR enabled, cif.c:2093-2106) and CVI_MIPI_SET_YUV_SWAP (vi.c:2352, 2844-2859). snsr_i2c: no device node and no DT node at all; it is a self-registered platform device "snsr_i2c" (snsr_i2c.c:455-472) that registers a function-pointer callback into base via vip_sys_register_cmm_cb(VIP_CMM_I2C,...) (snsr_i2c.c:368-373; base/base.c:1024-1050) and is invoked only by vi through vip_sys_cmm_cb_i2c with pseudo-ioctl cmds CVI_SNS_I2C_WRITE / BURST_QUEUE / BURST_FIRE (snsr_i2c.h:29-34; vi.c:1828, 1887, 1950). Userspace reaches it indirectly via VI_IOCTL_SET_SNR_CFG_NODE (vi_uapi.h:43; vi.c:5160-5195).
+hw_blocks:
+  - CSI MAC x3 (MAX_LINK_NUM=3, cif_drv.h:4): each MAC is a 4-block register page: TOP/sensor_mac @+0x000, SLVDS ctrl @+0x200, csi_ctrl_top @+0x400, mac_vi (output to VI/ISP) @+0x600 (cif_reg.h:27-30; struct REG_SENSOR_MAC_T/REG_SUBLVDS_CTRL_TOP_T/REG_CSI_CTRL_TOP_T/REG_SENSOR_MAC_VI_T, reg_blocks_csi_mac.h:7,60,94,127). Commented physical bases: MAC0 0x0A0C2000, MAC1 0x0A0C4000, MAC2 0x0A0C6000 (cif_reg.h:9-11, unverified against DTS).
+  - CSI WRAP / D-PHY wrapper, shared by all MACs (one reg resource, passed as wrap_base to all three links, cif.c:2835-2839): PHY TOP @+0x000, 4-lane PHY (PHYD 4L) @+0x300, 2-lane PHY (PHYD 2L) @+0x600 (cif_reg.h:39-42; REG_SENSOR_PHY_TOP_T/4L_T/2L_T reg_blocks_csi_wrap.h:154,64,7). Commented base 0x0A0D0000 (cif_reg.h:13).
+  - 6 physical D-PHY lanes (CIF_PHY_LANE_0..5, cif_drv.h:449-457) in two ports P0=lanes0-2, P1=lanes3-5 (LANE_IS_PORT1 cif.c:456); any physical lane can be routed to logical CLK/D0..D3 of MAC0 (4L PHY, CSI_LANE_D*_SEL) or CLK/D0..D1 of MAC1 (2L PHY, 'dual mode' SENSOR_PHY_MODE=1) with per-lane P/N swap (cif_set_lane_id cif_drv.c:1263-1363). So: 1x 4-lane + 1x 2-lane CSI-2 receiver, or 2x 2-lane; MIPI/interrupts only for devno<CIF_MAX_CSI_NUM=2 (cif.h:8; cif.c:1963-1964).
+  - Clock-lane buffer direction / cross-port deskew: MIPIRX_SEL_CLK_P0TOP1/P1TOP0 and per-lane deskew phase (cif_set_clk_dir cif_drv.c:1406-1438; cif_set_lane_deskew cif_drv.c:1509; lane_phase module_param cif.c:76-78; rules cif.c:532-581).
+  - D-PHY timing: T_HS_SETTLE, AUTO_IGNORE/AUTO_SYNC in PHY 4L/2L REG_10 (cif_set_hs_settle cif_drv.c:1440-1469), termination/bias power-down MIPIRX_PD_IBIAS/PD_RXLP (cif_stream_enable cif_drv.c:1148-1157), lane enable DESKEW_LANE_EN, PHY state debug regs DBG_90/94 (cif_get_csi_phy_state cif_drv.c:1665-1679).
+  - CSI-2 packet decoder in csi_ctrl_top: lane count (CSI_LANE_MODE), decode type by data type (0x2A/0x2B/0x2C RAW8/10/12, 0x1E/0x1F YUV422 8/10, cif.c:480-500), VS generation mode, VC mapping CSI_VC_MAP_CH00..CH11 (_cif_csi_config cif_drv.c:721-790), HDR modes VC / DT / DOL / manual (csi_hdr_mode cif_drv.h:140-145; _cif_hdr_csi_enable cif_drv.c:996; cif_hdr_manual_config cif_drv.c:1063), error interrupts ECC/CRC/HDR/WC/FIFO-full (cif_drv.h:63-73).
+  - Sub-LVDS and HiSPi deserializer (SLVDS ctrl block, sync codes, vsync generator, endian) (_cif_sublvds_config cif_drv.c:86-197; _cif_hispi_config cif_drv.c:199-281; cif_set_lvds_vsync_gen cif_drv.c:1590).
+  - Parallel/TTL front-end: DVP/CMOS raw, BT.601, BT.656 (9-bit), BT.1120, custom0, BT-demux 2/3/4-channel multiplexed BT.656 (input_mode_e cif_uapi.h:60-70; _cif_ttl_config cif_drv.c:283; _cif_btdemux_config cif_drv.c:617; pin-function routing via cif_set_ttl_pinmux cif_drv.c:867 and direct PINMUX writes cif.c:1341-1346,1370-1375).
+  - Output stage mac_vi: crop window, info-line strip, YUV/UV swap, BT output order (cif_set_crop cif_drv.c:821; cif_crop_info_line cif_drv.c:792; cif_swap_yuv cif_drv.c:844; cif_set_bt_fmt_out cif_drv.c:858). No DMA: zero 'dma'/'addr'/'stride' fields in either register map (grep -c dma = 0 in reg_fields_csi_mac.h and reg_fields_csi_wrap.h); data goes on-chip to the ISP CSI bridge (ISP_BLK_ID_CSIBDG0/1/2 handled in vi: vi_drv.c:281-303).
+  - Sensor MCLK generators clk_cam0/clk_cam1 at 24/25/26/27/37.125 MHz (cam_pll_setting cif.c:2124-2146; clk_set_rate cif.c:2210,2282) and sensor reset GPIOs (cif_reset_snsr_gpio cif.c:2366-2386).
+  - MAC clock: vip_sys_2 source mux (fpll vs disppll, cif.c:1783-1790) and per-MAC VIP_SYS 'norm div' ratio registers programmed through base (VIP_NORM_CLK_RATIO_CONFIG/VIP_UPDATE_CLK_RATIO, cif.c:1792-1817; vip_common.h:14-24), target 198/297/396/500/594 MHz (cif.c:1714-1737).
+  - Pad control block (pad_ctrl resource): clears pull-up/down on the MIPIRX lane pads, PSD_CTRL_OFFSET(n)=(5-n)*8, PU=BIT(2), PD=BIT(3) (cif.c:459-461, 516-523).
+  - snsr_i2c: no hardware of its own; uses the SoC's DesignWare I2C adapters 0..4 (I2C_MAX_NUM=5, snsr_i2c.h:8) via i2c_transfer.
+dt_expectations:
+  compatibles:
+    - cvitek,cif (cif.c:3400); platform driver name "cif" (cif.c:3419); snsr_i2c has no compatible/DT node (self-registered platform_device "snsr_i2c", snsr_i2c.c:455-472)
+  reg_names_or_count: No reg-names used; indexed IORESOURCE_MEM: [0]=CSI MAC0, [1]=CSI WRAP/PHY (shared by all links), [2]=MAC1, [3]=MAC2 (cif_set_base_addr calls cif.c:2835-2839); loop maps up to 5 entries (MAX_LINK_NUM*2-1, cif.c:2820) and pad_ctrl is taken from the entry AFTER the loop index, i.e. pad_ctrl is only picked up if there are at least 6 reg entries; with exactly 5 the fifth is mapped into reg_base[4] and unused and the driver logs 'no pad_ctrl for cif' (cif.c:2842-2855). Sizes are computed as res->end - res->start (off-by-one, cif.c:2825). Commented physical bases: 0x0A0C2000/0x0A0C4000/0x0A0C6000 (MAC0-2), 0x0A0D0000 (WRAP) (cif_reg.h:9-15, unverified).
+  irq_names:
+    - 2 interrupts by index (platform_get_irq(pdev,0/1), CIF_MAX_CSI_NUM=2), requested IRQF_SHARED with local names cif-irq0/cif-irq1 (cif.c:2787-2791, 2865-2876); irq_name[] has a third entry cif-irq2 that is never requested. ISR only accumulates ECC/CRC/WC/HDR/FIFO-full error counters and masks them after 0xFFFF (cif.c:2743-2783) - no frame/line interrupts (those are in vi's csi_bdg).
+  clock_names:
+    - clk_cam0
+    - clk_cam1
+    - clk_sys_2
+    - clk_mipimpll
+    - clk_disppll
+    - clk_fpll
+    - (all via devm_clk_get, cif.c:2801-2816; all optional - errors only skip dev_info). Mainline equivalents exist: CLK_CAM0=147, CLK_CAM1=148, CLK_SRC_VIP_SYS_2=102, CLK_MIPIMPLL=3, CLK_DISPPLL=5, CLK_FPLL=2 (include/dt-bindings/clock/sophgo,cv1800.h:158-159,113,11-14); clk_cam0/1 are rate-settable muxes with divider in clk-cv1800.c:795-803. The CSI MAC gate clocks CLK_CSI_MAC0..2_VIP (106-108) are NOT requested by cif; vi requests clk_csi_mac0..2 (vi_interfaces.h:16-18). CLK_CSI0_RX_VIP/CLK_CSI1_RX_VIP (109/110, gates clk-cv1800.c:726) are requested by nobody in osdrv - unverified whether they must be enabled.
+  reset_handling: reset-names phy0, phy-apb0 (link0) and phy1, phy-apb1 (link1) via devm_reset_control_get (cif.c:2897-2910); asserted/deasserted together with a 5us gap in cif_reset_mipi (cif.c:2021-2027), also used on suspend (cif.c:3339). Return value is checked with 'if (ptr)' not IS_ERR (cif.c:2900-2910), so a missing reset yields an ERR_PTR that is later passed to reset_control_assert. Vendor binding ids: RST_CSIPHY0=70, RST_CSIPHY0RST_APB=71, RST_CSIPHY1=72, RST_CSIPHY1RST_APB=73 (sg2000_linux_5.10/include/dt-bindings/reset/cv181x-resets.h:81-84). Mainline cv18xx-reset.h defines no macros for 70-73 (only RST_COMBO_PHY0=58, RST_VIP_CAM0=99), but the mainline controller is index-based reset-simple 'sophgo,cv1800b-reset' at 0x3003000 (cv180x.dtsi:54-58), so numeric indices work. Additionally the MAC soft-resets csi_mac0/1/2 are toggled through the VIP_SYS register block owned by the osdrv base module (vip_toggle_reset, cif.c:2030-2040; base/chip/cv181x/vip_sys.c:68-83), not through the SoC reset controller.
+  gpios_and_misc_props:
+    - snsr-reset: indexed GPIO list, one per link, with polarity flags, via of_get_named_gpio_flags + gpio_request (cif.c:2881-2894); driven by CVI_MIPI_RESET_SENSOR/UNRESET_SENSOR (cif.c:2366-2386).
+    - Module parameters instead of DT: mclk0/mclk1 (sensor MCLK frequency enum), lane_phase[5] (deskew phases), bypass_mac_clk, max_mac_clk (cif.c:67-85).
+    - Pinmux for TTL/BT paths is written directly to PINMUX_BASE 0x03001000 via vendor PINMUX_CONFIG macros (18 sites, cif.c:1370-1491) and a vi_pin table (cif.c:1341-1346) - no pinctrl-names/pinctrl-0 in the driver.
+  reserved_memory_or_ion: None. CIF has no DMA and allocates no buffers (no ION/cvi_ion/of_reserved_mem calls in cif.c or snsr_i2c.c beyond the unused #include <linux/of_reserved_mem.h>, cif.c:5). Buffer handling is entirely in vi.
+depends_on_modules:
+  - base (cvi_base.ko / KBUILD_EXTRA_SYMBOLS=../base/Module.symvers, cif/Makefile:19, snsr_i2c/Makefile:13): cif uses vip_sys_reg_write_mask, vip_toggle_reset, VIP_NORM_CLK_RATIO_CONFIG/VIP_UPDATE_CLK_RATIO (13 sites), base_reg_module_cb/base_rm_module_cb (2 sites); snsr_i2c uses vip_sys_register_cmm_cb (base/base.c:1024-1039)
+  - vi (consumer, not a link-time dependency of cif): calls cif through the base callback table (E_MODULE_CIF: vi.c:2352, 2844, 2848, 2859), owns the CSI MAC gate clocks clk_csi_mac0..2 (vi_interfaces.h:16-18, vi.c:4779-4790) and the ISP CSI-bridge interrupts (vi_drv.c:281-303), and drives snsr_i2c via vip_sys_cmm_cb_i2c (vi.c:1887, 1950). cif without vi produces nothing (no DMA).
+  - vendor kernel pinctrl header drivers/pinctrl/cvitek/pinctrl-cv181x.h (ccflags -I$(srctree)/drivers/pinctrl/cvitek/, cif/Makefile:10; include cif.c:17)
+  - vendor kernel I2C core/DesignWare driver extensions (struct i2c_adapter.i2c_idx, I2C_M_WRSTOP) for snsr_i2c
+  - osdrv include headers linux/cvi_defines.h, linux/cif_uapi.h, linux/vi_snsr.h, vip_common.h, base_cb.h, cif_cb.h (cif.c:15,30-36)
+vendor_kernel_only_deps:
+  -
+    symbol_or_header: drivers/pinctrl/cvitek/pinctrl-cv181x.h (PINMUX_BASE 0x03001000, PINMUX_CONFIG(), FMUX_GPIO_FUNCSEL_* tables, mmio_clrsetbits_32)
+    evidence: cif.c:17 includes it; 18 PINMUX_CONFIG sites (cif.c:1370-1491) plus cif_config_pinmux using mmio_clrsetbits_32 (cif.c:1341-1346); macros defined in sg2000_linux_5.10/drivers/pinctrl/cvitek/pinctrl-cv181x.h:13-21, mmio_clrsetbits_32 in pinctrl-cv180x.h:26 (cv181x variant unverified). Not present in mainline (grep of /home/user/mainline_linux/include returned nothing).
+    call_sites: 19
+    replacement_in_mainline: pinctrl states in DT consumed by drivers/pinctrl/sophgo/pinctrl-sg2000.c (has PIN_MIPIRX* pins, pinctrl-sg2000.c:199-200) with bias support in pinctrl-cv18xx.c:266-340; only affects TTL/BT paths and the MIPIRX pad pull disable.
+  -
+    symbol_or_header: CONFIG_COMMON_CLK_CVITEK (vendor clk Kconfig) selecting the CCF code path; the #else path pokes the clock controller by raw ioremap(0x03002xxx) (PLL power-down, cam0pll dividers, vip_sys2 divider)
+    evidence: sg2000_linux_5.10/drivers/clk/cvitek/Kconfig:1; cif.c:1794 '#if defined(CONFIG_COMMON_CLK_CVITEK)', cif.c:2191-2356 and 1823-1848; 38 'ioremap(0x0' sites in cif.c. Mainline symbol is CONFIG_CLK_SOPHGO_CV1800, so on mainline the raw-register #else branch would be compiled in unless the ifdef is changed.
+    call_sites: 38
+    replacement_in_mainline: Keep only the CCF branch (clk_set_rate/clk_prepare_enable on CLK_CAM0/CLK_CAM1, clk_set_parent on CLK_SRC_VIP_SYS_2) using drivers/clk/sophgo/clk-cv1800.c; delete the raw path.
+  -
+    symbol_or_header: struct i2c_adapter.i2c_idx (vendor field)
+    evidence: sg2000_linux_5.10/include/linux/i2c.h:715; populated in vendor drivers/i2c/i2c-dev.c:674-687; used in snsr_i2c.c _init_resource (4 occurrences). Absent from mainline include/linux/i2c.h (grep empty); mainline i2c-dev.c:687 names devices by adap->nr.
+    call_sites: 4
+    replacement_in_mainline: adap->nr with DT i2c aliases, or (preferred) drop snsr_i2c entirely in favour of V4L2 sensor subdevs.
+  -
+    symbol_or_header: I2C_M_WRSTOP (vendor uapi flag 0x0002) and DesignWare 'use_interstop' behaviour
+    evidence: sg2000_linux_5.10/include/uapi/linux/i2c.h:74; consumed in vendor drivers/i2c/busses/i2c-designware-master.c:335-339; set on every queued burst message in snsr_i2c.c snsr_i2c_burst_queue (msg->flags = I2C_M_WRSTOP). Absent from mainline uapi i2c.h.
+    call_sites: 1
+    replacement_in_mainline: I2C_M_STOP: mainline i2c-designware-master.c:885-905 splits an i2c_transfer into one transaction per part up to each I2C_M_STOP under a single lock acquisition, and advertises I2C_FUNC_PROTOCOL_MANGLING (line 941) - functionally equivalent for the burst use case.
+  -
+    symbol_or_header: osdrv base module exports: vip_sys_reg_write_mask, vip_toggle_reset, VIP_NORM_CLK_RATIO_CONFIG/VIP_UPDATE_CLK_RATIO macros (VIP_SYS register block), base_reg_module_cb/base_rm_module_cb, vip_sys_register_cmm_cb
+    evidence: base/chip/cv181x/vip_sys.c:68-104 (EXPORT_SYMBOL_GPL), vip_common.h:14-24,153-159, base/base.c:1024-1050; used in cif.c:1760,1800-1812,2030-2040,2699-2711 and snsr_i2c.c:372. The VIP_SYS per-IP clock-ratio dividers and csi_mac soft resets are not modelled by the mainline clk-cv1800 driver (grep for vip_sys/0a0c8 in drivers/clk/sophgo, drivers/reset, DTS returns only the vip_sys parent muxes at 0x03002000).
+    call_sites: 16
+    replacement_in_mainline: A syscon/regmap node for the VIP_SYS block (or extending clk-cv1800 / a small reset-simple instance for the VIP soft resets); media-controller links instead of the base callback table; sensor control via V4L2 subdev instead of cmm callbacks.
+  -
+    symbol_or_header: dt-bindings/reset/cv181x-resets.h RST_CSIPHY0/RST_CSIPHY0RST_APB/RST_CSIPHY1/RST_CSIPHY1RST_APB
+    evidence: sg2000_linux_5.10/include/dt-bindings/reset/cv181x-resets.h:81-84 (70-73); mainline arch/riscv/boot/dts/sophgo/cv18xx-reset.h has no defines for indices 70-73.
+    call_sites: 4
+    replacement_in_mainline: Numeric indices 70-73 on the mainline 'sophgo,cv1800b-reset' reset-simple controller (cv180x.dtsi:54-58), or add macros to cv18xx-reset.h.
+  -
+    symbol_or_header: linux/cvi_defines.h, linux/cif_uapi.h, linux/vi_snsr.h, vip_common.h, base_cb.h, cif_cb.h (osdrv-internal headers that pose as kernel headers)
+    evidence: cif.c:15,30-36; located at interdrv/v2/include/chip/cv181x/uapi/linux and include/common/kapi (ccflags cif/Makefile:8-11).
+    call_sites: 7
+    replacement_in_mainline: Not needed for a V4L2 driver; for a lift-and-shift port they move into the module's own include dir.
+userspace_contract: Today the kernel CIF driver is a thin register programmer; all camera-specific knowledge lives in the CVITEK middleware (libsns_<sensor>.so + libisp/libsys; not in this repo, so the following is inferred from the uAPI). (1) Receiver configuration is dictated by userspace per sensor mode via CVI_MIPI_SET_DEV_ATTR with struct combo_dev_attr_s (cif_uapi.h:272-283): input mode, MAC clock, MCLK frequency, and for MIPI struct mipi_dev_attr_s (cif_uapi.h:159-167) with raw_data_type, lane_id[5] (logical CLK/D0-D3 -> physical lane 0-5, -1 unused), pn_swap[5], wdr_mode (NONE/VC/DT/DOL/MANUAL), data_type[2] for DT-HDR, dphy.enable + dphy.hs_settle, demux vc_mapping[4], img_size, wdr_manu (manual HDR line geometry). So lane mapping, polarity, D-PHY hs_settle and HDR mode are all programmed by the userspace sensor driver, not derived in-kernel (verified: _cif_set_attr_mipi cif.c:464-640 only validates and applies). (2) Sensor power/clock sequencing is also driven from userspace: CVI_MIPI_RESET_SENSOR/UNRESET_SENSOR toggle the snsr-reset GPIO, CVI_MIPI_ENABLE/DISABLE_SENSOR_CLOCK and SET_SENSOR_CLOCK set MCLK from a 5-entry table (cif.c:2124-2146, 2514-2619). (3) Initial sensor register init over I2C: the kernel offers no init path (snsr_i2c has no read op and only runtime write/burst, snsr_i2c.c:347-366), so the sensor mode tables are most likely written by the middleware directly through /dev/i2c-N - likely, unverified (middleware not available). (4) Runtime 3A: the userspace ISP computes exposure/gain register groups and hands them to the kernel vi driver via VI_IOCTL_SET_SNR_CFG_NODE as struct snsr_cfg_node_s (vi_snsr.h:117-156: up to ISP_MAX_SNS_REGS=32 struct isp_i2c_data with i2c_dev, dev_addr, reg_addr/addr_bytes, data/data_bytes, dly_frm_num, drop_frame, vblank_update, plus a 'magic_num' target frame number); vi queues them (vi.c:5160-5195 -> _isp_snr_cfg_enq) and at frame-end/vblank of frame == magic_num fires them through snsr_i2c (vi.c:1815-1952). The burst mechanism exists so that a whole register group lands inside one vertical blanking: snsr_i2c_burst_queue collects up to 32 messages per adapter, each flagged I2C_M_WRSTOP (snsr_i2c.c:92-143, snsr_i2c.h:9), and snsr_i2c_burst_fire sends them in a single i2c_transfer (snsr_i2c.c:290-345), measuring the duration; vi selects burst vs single writes with module_param burst_i2c_en (vi.h:1463-1464; vi.c:1828). It uses a dummy i2c_client "sensor_i2c" at 0x3d (0x7b>>1) instantiated on every adapter 0..4 only to reach the adapter; the real slave address comes from isp_i2c_data.dev_addr (snsr_i2c.c:26-28, 65-67, 390-399). Binary compatibility: the CVITEK middleware links against this exact ioctl ABI ('m' magic, struct layouts with native enums, cif_uapi.h) and against the vi/sys/vb ABIs; any move to V4L2 breaks the proprietary middleware completely, and because the ISP 3A/tuning is closed-source userspace, a V4L2 port also needs a replacement 3A (libcamera IPA or vendor-provided) - the CIF/snsr_i2c part itself carries no algorithms. In the mainline model: sensor drivers in drivers/media/i2c own init tables, reset-gpios, clocks (CLK_CAM0/1) and expose exposure/gain as V4L2 controls; lane mapping/polarity come from the DT endpoint (data-lanes, clock-lanes, lane-polarities); hs_settle is derived from link-frequency via phy_mipi_dphy_get_default_config (include/linux/phy/phy-mipi-dphy.h:278); frame-synchronous control application is done by userspace (libcamera DelayedControls) - so snsr_i2c and the sensor-related CIF ioctls become unnecessary. Sensor driver availability (verified by listing /home/user/mainline_linux/drivers/media/i2c): present imx219/imx290/imx334/imx335/imx415/imx678/ov5647/ov5640/ov4689/ov9282/gc2145/gc05a2/gc08a3/os05b10; absent gc2053/gc2083/gc4653, all SmartSens sc*-series, os04a10 - the sensors commonly shipped with CVITEK/Milk-V boards would need new drivers.
+api_breakages_5_10_to_7_3:
+  -
+    api: <linux/of_gpio.h>: of_get_named_gpio_flags(), enum of_gpio_flags, OF_GPIO_ACTIVE_LOW
+    what_changed: Header removed in mainline 7.3 (/home/user/mainline_linux/include/linux/of_gpio.h does not exist).
+    fix: devm_gpiod_get_index_optional(dev, "snsr-reset", i, GPIOD_OUT_HIGH) + gpiod_set_value_cansleep(); polarity handled by gpiolib.
+    severity: trivial
+    call_sites: 4
+  -
+    api: legacy GPIO numbers: gpio_request(), gpio_direction_output(), gpio_is_valid() via <linux/gpio.h>
+    what_changed: include/linux/gpio.h is a 22-line shim; legacy API only under CONFIG_GPIOLIB_LEGACY via <linux/gpio/legacy.h> and must not be used by new code.
+    fix: Convert to gpiod descriptors (same change as above).
+    severity: trivial
+    call_sites: 7
+  -
+    api: devm_reset_control_get(dev, id)
+    what_changed: Removed; only __devm_reset_control_get and the explicit _exclusive/_optional variants remain (include/linux/reset.h:100,617-620).
+    fix: devm_reset_control_get_optional_exclusive(); also fix the 'if (ptr)' checks to IS_ERR (cif.c:2900-2910).
+    severity: trivial
+    call_sites: 4
+  -
+    api: struct platform_driver.remove returning int
+    what_changed: remove() is 'void (*remove)(struct platform_device *)' (include/linux/platform_device.h:280).
+    fix: Change cvi_cif_remove and cvi_snsr_i2c_remove to void.
+    severity: trivial
+    call_sites: 2
+  -
+    api: #include <generated/compile.h>
+    what_changed: Still generated in 7.3 (Makefile:1420,1487) but reduced to UTS_MACHINE/LINUX_COMPILE_BY/HOST/LINUX_COMPILER; cif.c uses none of them (grep UTS_ in cif.c empty).
+    fix: Drop the include.
+    severity: trivial
+    call_sites: 1
+  -
+    api: CONFIG_COMMON_CLK_CVITEK ifdef guarding CCF vs raw-ioremap clock code
+    what_changed: Symbol does not exist in mainline (clk driver is CONFIG_CLK_SOPHGO_CV1800), so the raw PLL/divider register hacks at 0x03002xxx would be compiled in.
+    fix: Remove the ifdef, keep the CCF branch only, delete 38 ioremap(0x0...) sites; verify CLK_CAM0/CLK_CAM1 reach 24/25/26/27/37.125 MHz with clk-cv1800.c (clk_cam0 is a mux+divider, clk-cv1800.c:795-803).
+    severity: moderate
+    call_sites: 38
+  -
+    api: struct i2c_adapter.i2c_idx
+    what_changed: Vendor-only field, absent in mainline.
+    fix: Use adap->nr plus DT i2c aliases, or remove snsr_i2c.
+    severity: trivial
+    call_sites: 4
+  -
+    api: I2C_M_WRSTOP message flag
+    what_changed: Vendor-only; mainline provides I2C_M_STOP with DesignWare support that splits the transfer at each STOP (i2c-designware-master.c:885-905).
+    fix: Use I2C_M_STOP (requires adapter I2C_FUNC_PROTOCOL_MANGLING, set by dw driver line 941). Timing behaviour must be re-measured.
+    severity: trivial
+    call_sites: 1
+  -
+    api: vendor pinctrl header PINMUX_CONFIG()/mmio_clrsetbits_32()/vi_pin table writing PINMUX_BASE directly
+    what_changed: Header is vendor-only; mainline pinctrl-sg2000 owns the pinmux registers and direct writes would race with it.
+    fix: Express TTL/BT pin functions and MIPIRX pad bias as pinctrl states in DT and call pinctrl_select_state(); or drop TTL/BT support initially.
+    severity: moderate
+    call_sites: 19
+  -
+    api: SIMPLE_DEV_PM_OPS, .owner = THIS_MODULE in platform_driver, proc_ops, devm_ioremap_nocache
+    what_changed: SIMPLE_DEV_PM_OPS still exists (include/linux/pm.h:437) but DEFINE_SIMPLE_DEV_PM_OPS is preferred; proc_ops and devm_ioremap are already handled by LINUX_VERSION_CODE ifdefs (cif.c:2824-2828, 3238-3246).
+    fix: Cosmetic: switch to DEFINE_SIMPLE_DEV_PM_OPS, drop the <5.10 branches.
+    severity: trivial
+    call_sites: 4
+mainline_framework_fit: Framework: V4L2 sub-device (MEDIA_ENT_F_VID_IF_BRIDGE) with media-controller and fwnode endpoints, plus the generic PHY framework for the D-PHY wrapper, as in drivers/media/platform/rockchip/rkisp1/rkisp1-csi.c (518 lines; CSI-2 receiver with no DMA integrated into the ISP driver, external D-PHY via devm_phy_get(\"dphy\") line 503, phy_mipi_dphy_get_default_config/phy_configure/phy_power_on lines 154-190, entity function VID_IF_BRIDGE line 451), drivers/media/platform/cadence/cdns-csi2rx.c (1770 lines in dir; resets sys/p/pixel lines 132-134, get_frame_desc from source 233-244, V4L2 streams set_routing 582-672 and enable_streams 492-521 for VC/DT demux), and drivers/media/platform/sunxi/sun6i-mipi-csi2 (899 lines; async notifier for the sensor 411-484, phy_reset/configure/power_on 249-268). Structural fit of the CV181x CIF is good: it is a pure bridge (no DMA, verified zero DMA registers), it exposes exactly the knobs V4L2 models - lane count/mapping/polarity (DT endpoint data-lanes, clock-lanes, lane-polarities), hs_settle (derived from link-frequency, phy-mipi-dphy.h:278), data type/VC routing (V4L2_SUBDEV_FL_STREAMS + set_routing, include/media/v4l2-subdev.h:974,878), error IRQ counters (statistics only). The PHY wrapper (csi_wrap: 6 lanes shared between a 4L and a 2L PHY, lane select, clock-buffer direction, deskew phase) is best modelled as a separate phy driver (phy-sophgo-cv1800-csi-dphy) with two phy instances, or embedded as in rkisp1-csi if the lane-direction heuristics (cif.c:532-581) prove hard to express in DT. Poor fit areas: sub-LVDS and HiSPi have no V4L2 mbus type (only CSI2_DPHY/CSI2_CPHY/PARALLEL/BT656/CCP2), the BT-demux 2/3/4 multiplexed input has no standard model, manual-HDR line geometry (CVI_MIPI_SET_WDR_MANUAL) is a vendor pipeline concept, and the per-MAC VIP_SYS clock-ratio dividers and csi_mac soft resets are not in the mainline clk/reset drivers (need syscon or clk-driver extension). The decisive constraint is downstream: because CIF writes nothing to memory, a CSI-2 RX subdev is only usable together with a V4L2 driver for the VI/ISP (CSI bridge + pre-RAW + RAW DMA) that provides the /dev/videoN capture queue; mainline has no such driver and the web check found no upstream CV18xx CSI/ISP submissions (search of lore/LWN results showed only clk, dmamux, RTC, I2S work). snsr_i2c has no mainline counterpart and none is needed: standard drivers/media/i2c sensor subdevs plus V4L2 controls replace it, and frame-synchronous register application moves to userspace (libcamera).
+port_options:
+  -
+    name: A. Lift-and-shift cvi_mipi_rx + snsr_i2c as out-of-tree modules on 7.3 (keep /dev/cvi-mipi-rx ioctl ABI)
+    description: Fix the API breakages listed (gpiod, reset, void remove, compile.h, i2c_idx->nr, I2C_M_WRSTOP->I2C_M_STOP), flip the clock ifdef to CCF-only and delete the raw 0x03002xxx pokes, keep VIP_SYS ratio/reset writes via the (also ported) base module or a syscon regmap, replace PINMUX_CONFIG with pinctrl states or #if 0 the TTL/BT paths, author the DT node (compatible cvitek,cif, 4-6 reg entries, 2 irqs, 6 clocks, 4 resets by index 70-73, snsr-reset GPIOs). Middleware keeps working unchanged (ABI preserved).
+    effort_engineer_weeks: 2-4 engineer-weeks for cif+snsr_i2c alone
+    assumptions: base/sys modules are ported in parallel (hard dependency for vip_sys_* symbols and the callback table); a Duo S class board with a working CVITEK middleware image and a MIPI sensor is available; only the MIPI path is validated, sub-LVDS/HiSPi/TTL/BT compile-tested only; no board DTS available so reg/irq numbers are taken from the vendor SDK or from TRM (unverified here).
+    risks:
+      - VIP_SYS clock-ratio dividers are not modelled in mainline clk-cv1800; if left unprogrammed the MAC may run at the wrong rate - requires keeping base's raw VIP_SYS access (conflict-free only because mainline does not touch that block)
+      - Direct PINMUX writes race with mainline pinctrl-sg2000 if TTL/BT paths are kept
+      - No upstream path; GPL-only symbol imports from mainline are fine, but the module remains tied to the proprietary middleware ABI
+      - I2C burst timing (one transfer with inter-message STOPs) must be re-measured with mainline DesignWare I2C_M_STOP splitting
+      - pad_ctrl resource indexing quirk (needs 6 reg entries) must be reproduced or fixed consistently with the middleware's expectations
+  -
+    name: B. New V4L2 CSI-2 receiver subdev + D-PHY phy driver (MIPI only), sensors via drivers/media/i2c, no snsr_i2c
+    description: Write drivers/media/platform/sophgo/cv1800-csi2rx.c (one subdev per MAC0/MAC1, sink pad from sensor via async notifier, source pad to the ISP), reusing the register sequences of cif_drv.c (_cif_csi_config, cif_stream_enable, cif_set_lane_id, cif_set_clk_dir, cif_set_hs_settle, cif_set_lane_deskew), a phy driver for the csi_wrap D-PHY (2 instances: 4L for MAC0, 2L for MAC1) implementing configure/power_on with hs_settle derived from link-frequency, DT bindings (YAML) for both, VIP_SYS syscon for MAC clock ratio and soft reset, error-IRQ statistics. Linear mode first; VC/DT HDR via V4L2 streams later. Sensor power/MCLK/reset move to the sensor node (clocks = <&clk CLK_CAM0>, reset-gpios).
+    effort_engineer_weeks: 4-8 engineer-weeks for receiver subdev + D-PHY + bindings (linear mode); +1-3 weeks for VC/DT HDR via V4L2 streams; +2-4 weeks per missing sensor driver (gc2053/gc4653/sc-series/os04a10 are absent in mainline); sub-LVDS/HiSPi/BT-demux excluded (no V4L2 bus model, +2-4 weeks each if attempted with custom extensions)
+    assumptions: A V4L2 VI/ISP capture driver (CSI bridge + RAW DMA) is developed in parallel or exists - without it the receiver can only be validated via ISP CSI-bridge status/pattern paths; the reg_fields headers in osdrv are a complete and correct register description (no TRM available here); a sensor with an existing mainline driver (imx219, ov5647, imx290, imx415) is used for bring-up; the engineer is familiar with V4L2 subdev/media-controller and the phy framework.
+    risks:
+      - hs_settle, deskew phases (lane_phase defaults 0x00/0x03/0x08/0x00/0x03) and the clock-buffer direction rules are only encoded as heuristics in cif.c without documentation; wrong values give silent link failures
+      - Lane mapping across the two PHY ports (any of 6 physical lanes to either MAC) may exceed what data-lanes/lane-polarities can express for the 2L port (select % 3 remap, cif_drv.c:1282-1289)
+      - Upstream review cycles for new bindings/drivers add calendar months beyond engineer-weeks
+      - Complete loss of CVITEK middleware compatibility: a replacement 3A (libcamera IPA) and tuning are needed for a usable camera even though CIF itself carries no algorithms
+      - Dependency on the unported VI/ISP block is the true critical path; CIF alone delivers no frames
+  -
+    name: C. Stepwise: A first for bring-up on 7.3, then B once a V4L2 VI/ISP driver exists
+    description: Use option A to get the hardware alive on a current kernel with the vendor middleware (regression baseline, register-level knowledge validation), then implement option B against the same hardware, reusing the validated register sequences and the DT node layout; retire snsr_i2c when sensors are moved to V4L2 subdevs.
+    effort_engineer_weeks: 6-12 engineer-weeks total for the CIF/snsr_i2c scope (sum of A and B linear-mode), excluding VI/ISP and sensor drivers
+    assumptions: Same as A and B; the A step is accepted as throw-away code; a single engineer owns both steps so knowledge transfers.
+    risks:
+      - Double work on clock/reset/pinctrl plumbing
+      - Temptation to keep the non-upstreamable A variant indefinitely once it works
+      - All B risks still apply
+key_findings:
+  -
+    finding: CIF is a pure bridge: it has no DMA and writes no frames to memory; data goes on-chip to the ISP's CSI bridge handled by the vi module. Frame/line interrupts live in vi; CIF's two IRQs only count ECC/CRC/WC/HDR/FIFO-full errors.
+    evidence: grep -c dma in drv/inc/reg_fields_csi_mac.h and reg_fields_csi_wrap.h = 0 (no address/stride fields); output block REG_SENSOR_MAC_VI_T (reg_blocks_csi_mac.h:127); vi handles ISP_BLK_ID_CSIBDG0/1/2 interrupt status (vi/chip/cv181x/vip/vi_drv.c:281-303); cif_isr cif.c:2743-2783.
+    confidence: verified
+  -
+    finding: Hardware topology: 3 CSI MACs but only 2 are MIPI-capable (MAC0 on a 4-lane PHY, MAC1 on a 2-lane PHY in dual mode); 6 physical D-PHY lanes in two 3-lane ports can be arbitrarily routed to logical CLK/D0-D3 with P/N swap; MAC2 serves TTL/BT inputs.
+    evidence: MAX_LINK_NUM=3 (cif_drv.h:4), CIF_MAX_CSI_NUM=2 (cif.h:8), IRQs requested for i<CIF_MAX_CSI_NUM (cif.c:2865), interrupt unmask only for devno<2 (cif.c:1963-1964); cif_set_lane_id selects REG_SENSOR_PHY_4L_T for mac_num 0 and REG_SENSOR_PHY_2L_T with SENSOR_PHY_MODE=1 for mac_num 1 (cif_drv.c:1263-1363); CIF_PHY_LANE_NUM=6 (cif_drv.h:449-457); LANE_IS_PORT1(x)=(x>2) (cif.c:456).
+    confidence: verified
+  -
+    finding: All sensor-specific receiver configuration (lane map, polarity, hs_settle, HDR mode VC/DT/DOL/manual, VC demux map, data types, MCLK) is pushed by userspace in one struct combo_dev_attr_s; the kernel only validates and applies, and enables streaming immediately in SET_DEV_ATTR.
+    evidence: cif_uapi.h:159-167, 272-283; _cif_set_attr_mipi cif.c:464-640 ending in cif_streaming(ctx,1,param->hdr_en) (cif.c:637-638); cif_set_dev_attr cif.c:1860-1968.
+    confidence: verified
+  -
+    finding: snsr_i2c exists to apply ISP-computed sensor register groups (exposure/gain) synchronously with a target frame number; vi queues userspace cfg-nodes and fires them at frame-end/vblank, optionally as one burst i2c_transfer of up to 32 messages with inter-message STOPs (vendor I2C_M_WRSTOP) so the whole group lands inside one blanking interval.
+    evidence: vi_snsr.h isp_i2c_data/snsr_regs_s with magic_num, dly_frm_num, vblank_update (lines 68-131); VI_IOCTL_SET_SNR_CFG_NODE handler vi.c:5160-5195; firing logic vi.c:1815-1952 (vip_sys_cmm_cb_i2c at 1887 and BURST_FIRE at 1950); snsr_i2c_burst_queue/fire snsr_i2c.c:92-143, 290-345; I2C_MAX_MSG_NUM=32 snsr_i2c.h:9; vendor flag uapi i2c.h:74 and dw master use_interstop lines 335-339.
+    confidence: verified
+  -
+    finding: snsr_i2c depends on two vendor-only I2C core changes (i2c_adapter.i2c_idx, I2C_M_WRSTOP) and instantiates a dummy client 'sensor_i2c' at 0x3d on every adapter 0..4; it has no DT node and no device file.
+    evidence: snsr_i2c.c:26-28 (I2C_BOARD_INFO 0x7b>>1), 375-410 (_init_resource loop over I2C_MAX_NUM=5 using i2c_adap->i2c_idx), 455-472 (self-registered platform_device); vendor include/linux/i2c.h:715, i2c-dev.c:674-687; mainline include/linux/i2c.h has neither symbol (grep empty), mainline i2c-dev.c:687 uses adap->nr.
+    confidence: verified
+  -
+    finding: Clock handling in cif has two code paths selected by CONFIG_COMMON_CLK_CVITEK; on a mainline kernel (CONFIG_CLK_SOPHGO_CV1800) the raw-register path with 38 ioremap(0x03002xxx) PLL/divider pokes would be compiled in unless the ifdef is changed. The CCF path maps 1:1 to mainline clock IDs.
+    evidence: cif.c:1794 and 2191-2356 (#if defined(CONFIG_COMMON_CLK_CVITEK)), grep -c 'ioremap(0x0' cif.c = 38; devm_clk_get names cif.c:2801-2816; mainline ids sophgo,cv1800.h:11-14,113,158-159; clk_cam0 mux+divider clk-cv1800.c:795-803.
+    confidence: verified
+  -
+    finding: The CSI MAC gate clocks are owned by vi, not cif, while cif programs the per-MAC VIP_SYS 'norm div' ratio and vip_sys_2 parent through the base module; the VIP_SYS block is not modelled in mainline clk/reset drivers.
+    evidence: vi_interfaces.h:16-18 clk_csi_mac0..2, vi.c:4779-4790; cif.c:1760 vip_sys_reg_write_mask(0x1C,...), 1783-1790 clk_set_parent, 1792-1817 VIP_NORM_CLK_RATIO_CONFIG; vip_common.h:14-24; grep for vip_sys/0a0c8 in mainline drivers/clk/sophgo, drivers/reset and DTS finds only the 0x03002000 parent muxes.
+    confidence: verified
+  -
+    finding: DT expectations inferred from probe: compatible cvitek,cif; indexed reg entries MAC0, WRAP, MAC1, MAC2 (+ pad_ctrl only when >=6 entries due to an indexing quirk); 2 irqs; 6 optional clocks (clk_cam0, clk_cam1, clk_sys_2, clk_mipimpll, clk_disppll, clk_fpll); 4 resets (phy0, phy-apb0, phy1, phy-apb1 = vendor ids 70-73); snsr-reset GPIO list.
+    evidence: cif.c:3400, 2820-2855, 2865-2876, 2801-2816, 2897-2910, 2881-2894; cv181x-resets.h:81-84. Actual board DTS not available in either repo (grep for cvitek,cif in arch/*/boot/dts empty).
+    confidence: verified
+  -
+    finding: Mainline 7.3 removed every legacy API the two modules use for GPIO and reset (of_gpio.h, gpio_request/gpio_direction_output, devm_reset_control_get) and changed platform remove() to void; all are mechanical fixes. proc_ops/devm_ioremap are already version-guarded.
+    evidence: /home/user/mainline_linux/include/linux/of_gpio.h absent; include/linux/gpio.h is a 22-line shim requiring CONFIG_GPIOLIB_LEGACY; include/linux/reset.h:100,617-620; include/linux/platform_device.h:280; cif.c:2824-2828, 3238-3246.
+    confidence: verified
+  -
+    finding: A V4L2 port of CIF fits mainline patterns well (closest analogs rkisp1-csi.c, cdns-csi2rx.c, sun6i-mipi-csi2) and makes snsr_i2c unnecessary, but it is only useful together with a V4L2 VI/ISP capture driver, which mainline lacks; no upstream CV18xx CSI-2/ISP submissions were found.
+    evidence: rkisp1-csi.c lines 154-190, 451, 503; cdns-csi2rx.c lines 132-134, 233-244, 492-521, 582-672; sun6i_mipi_csi2.c lines 170-283, 411-484; v4l2-subdev.h:878,974; grep -rli sophgo drivers/media = none; WebSearch 'sophgo cv1800 ... MIPI CSI-2 V4L2 lore' returned only clk/dmamux/RTC/I2S patches (search-snippet based, not exhaustive).
+    confidence: likely
+  -
+    finding: Sub-LVDS, HiSPi and BT-demux inputs have no V4L2 media-bus model; TTL/BT601/BT656/BT1120 map to V4L2 parallel/BT656 but currently rely on direct PINMUX register writes that would conflict with mainline pinctrl-sg2000.
+    evidence: input_mode_e cif_uapi.h:60-70; _cif_sublvds_config/_cif_hispi_config/_cif_btdemux_config cif_drv.c:86-281, 617; PINMUX_CONFIG sites cif.c:1370-1491 and cif_config_pinmux cif.c:1341-1346 writing PINMUX_BASE 0x03001000 (pinctrl-cv181x.h:13-21); mainline pinctrl-sg2000.c:199-200 owns PIN_MIPIRX*.
+    confidence: verified
+  -
+    finding: Commonly used CVITEK/Milk-V sensors lack mainline drivers (gc2053/gc2083/gc4653, SmartSens sc*, os04a10), while imx219/imx290/imx335/imx415/ov5647/ov5640 exist; sensor driver work is a separate cost item for option B.
+    evidence: ls /home/user/mainline_linux/drivers/media/i2c filtered for gc/sc/imx/ov/os0 prefixes (output listed gc0308, gc0310, gc05a2, gc08a3, gc2145, imx219..imx678, ov*, os05b10 only).
+    confidence: verified
+  -
+    finding: Initial sensor mode programming is most likely done by the userspace middleware directly over /dev/i2c-N, since the kernel exposes no sensor init or read path.
+    evidence: snsr_i2c_ioctl only implements WRITE/BURST_QUEUE/BURST_FIRE (snsr_i2c.c:347-366) and is reachable only from vi; cif offers only reset GPIO and MCLK ioctls (cif.c:2514-2548). Middleware source is not in the repo.
+    confidence: unverified
+  -
+    finding: Minor robustness issues to fix during any port: reset handles checked with 'if (ptr)' instead of IS_ERR; gpio_request failure returns 0 silently; ioremap size off-by-one; burst_fire returns -EIO unless exactly 1 message was sent (ret == 1) even for successful multi-message bursts.
+    evidence: cif.c:2900-2910; cif.c:2889-2890; cif.c:2825; snsr_i2c.c:343 ('return ret == 1 ? 0 : -EIO' after a transfer of ctx->msg_idx messages).
+    confidence: verified
+open_questions:
+  - Exact board DT node for cvitek,cif (number/order/sizes of reg entries, interrupt numbers, which GPIOs are snsr-reset) - not in either kernel repo; must be taken from the SDK 'build' repo or TRM. In particular whether real boards carry 5 or 6 reg entries given the pad_ctrl indexing quirk (cif.c:2842-2855).
+  - Are CLK_CSI0_RX_VIP/CLK_CSI1_RX_VIP (sophgo,cv1800.h:120-121) the D-PHY clocks, and who enables them in the vendor stack? Neither cif nor vi requests them by name.
+  - Is the VIP_SYS per-MAC clock-ratio programming (VIP_NORM_CLK_RATIO_CONFIG) mandatory, or does a fixed vip_sys_2 rate with the CLK_CSI_MAC*_VIP gates suffice? Needs the VIP_SYS register description (base/chip/cv181x/vip_common.h) and hardware tests.
+  - Correct hs_settle, deskew phase and clock-buffer-direction values per lane configuration without vendor documentation; the heuristics in cif.c:532-581 and lane_phase defaults are the only source.
+  - Where the middleware performs initial sensor register init (direct /dev/i2c-N assumed) and whether it relies on the dummy 'sensor_i2c' clients snsr_i2c instantiates.
+  - Whether the ISP CSI bridge (vi) requires a specific ordering between CIF streaming enable and ISP enable (vi.c:2838-2848 disables csibdg and resets LVDS before CIF attr is applied).
+  - Role of MAC2/third link beyond TTL/BT-demux (TTL_VI_SRC_VI2), and whether any MIPI use of MAC2 exists on CV181x.
+  - Whether the osdrv register-field headers (reg_fields_csi_*.h) are complete for the SG2000 die revision (no TRM available to cross-check).
+  - No upstream CV18xx CSI-2/ISP work was found via web search; this is based on search snippets and should be re-checked on lore.kernel.org before committing to option B.
+loc_total: 9727

@@ -1,0 +1,349 @@
+Phase-2 agent output: plan-staged-hybrid (generated 2026-10-06; evidence as file:line in the named repository; see docs/sg2000-kernel-port-plan.md)
+
+strategy_name: C - Staged hybrid: compile-first measurement, camera lift-and-shift with vendor uAPI/middleware, display as new DRM/KMS driver (ugly-then-clean), optional V4L2 wrapping of VI
+one_paragraph_summary: Answer the feasibility question in the cheapest defensible order. Stage 0 (3-6 eng-weeks, not api-delta's 8-15) compiles only the display+camera chain (sys, base, cif, snsr_i2c, vi, vpss, vo, fb, rgn; ~78k LOC) against 7.3 with -Werror off, ION stubbed and a temporary strncpy compat header, to measure real breakage; the 8-15 figure is inflated by codec (cvi_vc_drv 149k LOC in tree / 55.7k compiled), PWM/RTC/WDT/SARADC (droppable), and the ION shim (design work that belongs to Stage 1). Stage 1 (16-29 incremental) forward-ports the camera chain keeping the vendor ioctl ABI and CVITEK MPI middleware: ION replaced inside sys.c by a CMA-backed dma-buf exporter following the Armbian TPU recipe, cache ops via dma_sync_single_* on a dma-noncoherent device, VIP_SYS owned by base.ko through a DT reg, DT nodes taken from the real SDK DTS (now available), clocks renumbered to sophgo,cv1800.h, CSI PHY resets as raw indices 70-73. This gives a camera on 7.x and validates clocks/resets/DT/cache model with zero 3A work. Stage 2 (12-24) does display as a new DRM/KMS driver (DISP CRTC + primary plane, DSI host with SW ECC/CRC, D-PHY as PHY driver, drm_fbdev_dma) reusing scaler.c 2249-4300 + dsi_phy.c verbatim for first picture (gate at 4-8 weeks), with a concrete split of the SC_TOP block and the shared 'sc' IRQ (syscon regmap for CFG1/INTR bits, IRQF_SHARED with per-driver bit ownership, VPSS online-disp path dropped). Stage 3 (31-58, optional) wraps VI in V4L2 capture/META nodes using vendor structs toward libcamera; it is not needed to answer the feasibility question. Verdict: display feasible (medium confidence), camera feasible as vendor-ABI port (medium), native V4L2/libcamera camera feasible only as a long program (low confidence on image quality); mandatory Stages 0-2 total 31-59 eng-weeks.
+feasibility_verdict:
+  display: FEASIBLE as a new DRM/KMS driver, not as a forward-port of vo/fb. Evidence: the whole display register HAL is a self-contained ~2,500-line layer (vpss report key_findings: scaler.c 2249-4296 + dsi_phy.c 440, 72 EXPORT_SYMBOL_GPL consumed by vo/fb; vo/fb own no registers or IRQ, vo_core.c:211-220 '#if 0'); DISP/OSD/MIPI-TX/D-PHY are documented at register level in the public SG2000 TRM (ecosystem Q4: vdp.rst:288,292, mipi_tx.rst:147,159); every display clock exists in clk-cv1800.c (CLK_DISP_VIP 121, CLK_DSI_MAC_VIP 122, CLK_DSI_ESC 98, CLK_DISPPLL 5); drm_mipi_dsi host ops + 106 DSI panel drivers + lontium-lt8912b bridge exist (mainline-infra 'Display: DRM helper infrastructure'); Sophgo's own 6.12 CV186x DRM driver is a structural template (ecosystem Q3). Known gaps: SC_TOP/IRQ shared with vpss (resolved by the split below), undocumented bits (0x03002840 bit1, VIP_CLK_CTRL0 bit4, D-PHY PLL constants), Duo S MIPI_TX pads muxed to sdhci1 (sg2000-milkv-duo-s.dts:114-133, re-verified). First picture expected at 4-8 eng-weeks of Stage 2; minimal clean driver 8-14.
+  camera: FEASIBLE as a vendor-ABI lift-and-shift (Stage 1) with the closed CVITEK middleware retained; NOT yet feasible as a mainline-style V4L2/libcamera camera without a 20-35 wk kernel + 15-30 wk userspace program (vi-isp option B). Evidence for Stage 1: ION is confined to sys.c (15 call sites) behind exported sys_ion_* used by 48 external sites (sys-base key_findings); the T-Head CMO path exists in mainline (errata.c:74-125) and SG2000 is dma-noncoherent (sg2000.dtsi:21, re-verified); all 45 clock names map 1:1 (vendor-deps clock table); CSI PHY resets usable as raw 70-73 on reset-simple (cif-snsr dt_expectations); real DT nodes exist (sg200x_base.dtsi:668-735: cif 5 regs incl. pad_ctrl 0x03001c30, vi reg 0x0a000000/0x80000, vpss 0x0a080000/0x10000 + 0x0a0d1000/0x100, base 0x0a0c8000/0x20; sg200x_base_riscv.dtsi:312-358 irq 24 'isp', 25 'sc'); vi/cif have zero strncpy sites (re-counted: vi 0, cif 0, vpss 52, base 4, sys 4). Open risks: middleware's direct /dev/ion and probable /dev/mem use (vi-isp userspace_contract, unverified), ION fd lifecycle semantics, FROM_DEVICE invalidate semantics change (sys-base api_breakages).
+  overall: Feasible with a defensible answer reachable at 19-35 eng-weeks (camera streaming on 7.3, gate G1) plus 4-8 eng-weeks for display first picture (gate G2), i.e. ~25-43 eng-weeks to know; 31-59 eng-weeks to a maintainable Stage 0-2 result (camera on vendor ABI, display on DRM with fbdev emulation, both coexisting). The hard limits are not kernel API churn (bounded, mechanical) but (a) the closed middleware's memory/ABI assumptions and (b) the absence of any open 3A for the ISP, which caps the camera at 'vendor stack on a modern kernel' unless Stage 3 is funded.
+  display_confidence: medium
+  camera_confidence: medium
+scope_in:
+  - Stage 0: compile-only forward-port of sys, base, cif, snsr_i2c, vi, vpss, vo, fb, rgn (~78k LOC) against 7.3-rc6, -Werror removed, ION stubbed, measurement report
+  - Stage 1: runtime forward-port of the camera chain sys -> base -> {cif, snsr_i2c, vi, vpss(offline scaler)} keeping /dev/cvi-* ioctl ABI and the CVITEK MPI middleware; ION replaced in sys.c by CMA dma-buf exporter; /dev/ion compatibility device for the middleware's ISP pool allocation; cache ioctls via dma_sync_single_*; VIP_SYS via DT reg owned by base.ko
+  - Stage 1: sg2000-vip.dtsi derived from the real SDK DTS (ext/sophgo-sg200x-debian configs/common/dts/sg200x/), clock ids renumbered to sophgo,cv1800.h, reset indices 70-73, reserved-memory CMA pools, integration on the Armbian sophgo-sg200x 7.3 kernel (ERRATA_THEAD/CMA/DMABUF_HEAPS already enabled)
+  - Stage 1: single-sensor MIPI CSI-2 path, offline fe->be->DRAM->post ISP, VPSS offline scaling; sensors supported by the vendor middleware (e.g. GC2083/GC2053 class)
+  - Stage 2: new DRM/KMS driver drivers/gpu/drm/sophgo (1 CRTC on DISP tgen, primary plane, DSI host with mipi_dsi_host_ops.transfer, separate D-PHY PHY driver, drm_gem_dma + drm_fbdev_dma for /dev/fb0), panels/bridges from drivers/gpu/drm/{panel,bridge} via DT; first picture using scaler.c display HAL verbatim, then cleanup
+  - Stage 2: VIP_SYS syscon + reset/clk-gate provider and SC_TOP syscon shared between the forward-ported vpss and the DRM driver; IRQ 'sc' sharing patch in vpss; VO RGN overlays as DRM overlay planes (GOP) in the clean phase
+  - Stage 2: camera-to-display sample path via dma-buf fd (SYS_ION_ALLOC fd) imported into DRM as PRIME
+  - Stage 3 (optional, separately funded): cif as V4L2 subdev + D-PHY RX phy driver, VI capture video nodes + META_CAPTURE stats + META_OUTPUT params carrying vendor structs (out-of-tree fourcc), sensor subdevs, libcamera pipeline handler + IPA wrapping or replacing the vendor 3A
+scope_out_and_why:
+  - Forward-porting vo/mipi_tx/fb to run on 7.3 (beyond Stage 0 compile measurement): fbdev is deprecated for new drivers (drm-kms-helpers.rst:22; vo-mipitx-fb api_breakages 'fbdev driver model: hard'), panel init lives in userspace ioctls (vo_mipi_tx.c:163-273) with no upstream path, and the modules depend on 72 vpss exports; a DRM driver reuses the same HAL at similar cost and has an external consumer (BadgeOS LT8912B plan, ecosystem Q3)
+  - Video codec (cvi_vc_drv/jpeg/vcodec): 149k LOC in tree, CODA980/WAVE420L unsupported by mainline coda/wave5 (mainline-infra 'Codec'), firmware licence unclear (codec-others via DIGEST); not needed for the display/camera feasibility question; 30-55 wk native or 6-12 wk lift as a separate workstream
+  - TPU: already forward-ported to 7.2/7.3 by Armbian patch 0064 (ecosystem Q3 PR #10760) - reuse, do not port
+  - rtc, saradc, wdt, pwm, mailbox (rtos_cmdqu), mon, fast_image, clock_cooling: duplicated by mainline/Armbian drivers or debug-only (DIGEST 'Other modules'); dropping them also removes the PWM API rewrite (api-delta row 37)
+  - VPSS online ISP->VPSS mode and online SC_D->DISP (disp_from_sc) path: default off (vpss_core.c:1660 disp_online=false; scaler.c:4379 disp_from_sc=false, vpss report) and incompatible with a DRM-owned display; keep offline modes only
+  - Sub-LVDS/HiSPi/BT-demux/TTL camera inputs and BT/LVDS/I80 display outputs: no V4L2/DRM model or incomplete vendor code (cif-snsr key_findings; vo-mipitx-fb 'I80 path incomplete'); they also require the 52+19 direct PINMUX writes that collide with pinctrl-sg2000. Compile-only in Stage 0, #if 0 at runtime
+  - Restoring -Werror -Wextra (api-delta: +2-4 wk, upper bound 1968 non-static functions): zero functional value for an out-of-tree port
+  - Upstream submission of the camera modules: vendor uAPI (physical addresses, VB_BLK kernel pointers, packed structs with pointers) is not acceptable upstream (sys-base key_findings); only the DRM driver, VIP_SYS/SC_TOP syscon and bindings are candidates for upstreaming, costed as optional
+  - FreeRTOS fast-boot ISP (fast_image/rtos_cmdqu) and multi-sensor/HDR configurations: VI has no symbol dependency on them (vi-isp key_findings) and they multiply the test matrix
+workstreams:
+  -
+    id: WS0
+    name: Prerequisites and build/boot baseline
+    deliverable: Rebased osdrv (sg200x-dev HEAD 1b3a4964), riscv64 cross toolchain, Armbian sophgo-sg200x 7.3 kernel booting on Milk-V Duo S with CONFIG_ERRATA_THEAD, CMA/DMA_CMA, DMABUF_HEAPS_CMA, MEDIA/V4L2, DRM; SDK DTS imported into the scratch tree; middleware (cvi_mpi) binaries/sources and licence status recorded
+    depends_on:
+    effort_engineer_weeks: 1-2
+    key_evidence: ecosystem 'Sophgo SDK lines remain on linux_5.10' (local snapshot 2024-07-31 vs sg200x-dev 1b3a4964; weekly releases through 2026-08-24); Armbian config linux-sophgo-sg200x-riscv64-edge.config:44 CONFIG_ERRATA_THEAD=y, :101 CONFIG_CMA=y, :2332 CONFIG_DMA_CMA=y, :1642-1644 CONFIG_DMABUF_HEAPS(_CMA)=y, :978 MEDIA_SUPPORT=m (re-verified); DRM enablement in that config not confirmed by grep (unverified); mainline-infra 'dma-noncoherent and T-Head CMO' (ERRATA_THEAD has no default, not in arch/riscv/configs); SDK DTS at ext/sophgo-sg200x-debian/configs/common/dts/sg200x/sg200x_base.dtsi:668-770 and sg200x_riscv/sg200x_base_riscv.dtsi:312-365 (re-verified)
+    risks:
+      - Rebase brings two years of vendor changes that invalidate parts of the Phase-1 line numbers (re-inventory needed, ~0.5 wk)
+      - Middleware source may not be obtainable; only binaries -> ABI must be preserved exactly
+    exit_criteria: Kernel boots on Duo S from Armbian 7.3 config with /dev/dma_heap/<cma> present and dmesg showing T-Head CMO ops registered; osdrv tree rebased and building against vendor 5.10 as a regression baseline
+  -
+    id: WS1
+    name: Stage 0: compile-only forward-port of the display+camera subset and breakage measurement
+    deliverable: sys, base, cif, snsr_i2c, vi, vpss, vo, fb, rgn build and modpost-link against 7.3 with -Werror/-Wextra removed from their Makefiles, a temporary osdrv_compat.h (strncpy->strscpy_pad for compile only, stubs for cvi_efuse_*, ANNOTATE_*), ION stubbed (-ENOMEM) in sys.c, codec/tpu/misc excluded; a per-module report of warnings, unknown symbols, and raw-register/ION/pinmux sites compared with the Phase-1 inventory
+    depends_on:
+      - WS0
+    effort_engineer_weeks: 2-4 (Stage 0 total with WS0: 3-6)
+    key_evidence: api-delta compile-only table (lines 168-180): build 0.5-1, trivial fixes 1.5-3, strncpy 1-2, ION shim 2-4, cache 0.5-1, efuse/pinctrl 0.5-1, PWM 0.5-1, cvi_vc_drv 1-2 = 8-15; challenge: PWM and cvi_vc_drv are out of scope (-1.5 to -3), ION shim is Stage 1 design work (-2 to -4, replaced by a 0.25-0.5 stub), strncpy handled by compat header for compile-only (-0.75 to -1.5); re-count: strncpy .c lines by module base 4, sys 4, vpss 52, vo 89, vi 0, cif 0, rgn 5 (=171 with dwa/mon/cvi_vc_drv, matching api-delta); 21 Makefiles carry -Werror (re-verified); LOC re-counted: sys 1501, base 5798, cif 9233, snsr_i2c 494, vi 23985, vpss 25745, vo 6964, fb 869, rgn 3470 (~78k) vs cvi_vc_drv 149523, ive 20976; mechanical rows api-delta #1,4,6,8,12,16,22,25,31,33,36 (~90 sites) of which the subset touches ~55; sys-base api_breakages compat_ptr_ioctl redefinition (sys.c:835-843, base.c:617-626) and vi_core.c:38
+    risks:
+      - Hidden breakage classes not in the inventory (api-delta open_questions: -Wmissing-prototypes volume unmeasured, vdi.c:693)
+      - Compat header hides semantic strncpy issues that must be re-reviewed in Stage 1 for the 60 camera-chain sites
+    exit_criteria: All 9 modules produce .ko files; modpost unknown-symbol list is empty except the deliberately stubbed set (cvi_efuse_*, ION); measured breakage within +/-20% of the api-delta inventory; written list of every ioremap(0x...) and PINMUX_CONFIG site to be redesigned
+  -
+    id: WS2
+    name: sys/base runtime port: ION -> CMA dma-buf exporter, cache ops, /dev/ion compat, VIP_SYS via DT
+    deliverable: sys.c allocator on a dedicated reserved-memory CMA pool (cma_alloc or dma_alloc_attrs + vmap cached/WC) exporting each buffer with dma_buf_export so SYS_ION_ALLOC still returns paddr + fd; refcounted objects replacing the 100-entry phys table and the process-bound fd semantics; sys_cache_flush -> dma_sync_single_for_device(DMA_TO_DEVICE), SYS_CACHE_INVLD -> dma_sync_single_for_cpu(DMA_FROM_DEVICE) on the cvi-sys device with range validation; MODULE_IMPORT_NS("DMA_BUF"); a small /dev/ion compatibility miscdevice implementing ION_IOC_ALLOC (+paddr) and ION_IOC_CVITEK_FLUSH/INVALIDATE_PHY_RANGE over the same pool (needed only if the middleware cannot be rebuilt); base.c fixes (class_create, const class_attribute, compat_ptr_ioctl, security_task_getsecid, UTS_VERSION, efuse sysfs dropped or nvmem via Armbian patch 0028); VIP_SYS mapped from the 'cvitek,base' reg 0x0a0c8000
+    depends_on:
+      - WS1
+    effort_engineer_weeks: 3-6
+    key_evidence: sys-base port_options A (3-5 wk) and key_findings: ION confined to sys.c:48-269 (15 sites) behind exports used by 48 sites; vendor fd lifecycle process-bound (vendor ion.c:530,669,986-990); mainline dma-heap has no in-kernel alloc API (dma-heap.h:43-47); FROM_DEVICE semantics differ (vendor dma-mapping.c:37-39 vs mainline dma-noncoherent.c:56-59,98-113); vi-isp vendor_kernel_only_deps 'Userspace ION uAPI (/dev/ion ION_IOC_ALLOC + CVITEK PHY_RANGE ioctls)' used by the middleware for the ISP pool (cvitek_ion.c:281-397, VI_IOCTL_SET_DMA_BUF_INFO vi.c:5322-5340); ecosystem Q3 Armbian patch 0064 (dma_buf import, GET_DMABUF_PADDR, dma_sync_sgtable_*, 128 MiB CMA pool patch 0066) as proven recipe; SDK memmap: Duo S ION_SIZE=74 MiB (duos/settings.mk:9, memmap.py:43, re-verified)
+    risks:
+      - Middleware maps VB pools via /dev/mem or relies on VB_BLK kernel pointers (sys-base open_questions) -> may force CONFIG_STRICT_DEVMEM=n in Stage 1
+      - Cached pools + userspace-driven cache ops: any missed flush gives silent corruption on dma-noncoherent C906
+      - Changing SYS_CACHE_INVLD from clean+invalidate to pure invalidate may expose middleware bugs
+    exit_criteria: sys/base load; VB_IOCTL_CREATE_POOL carves a pool from the CMA region; SYS_ION_ALLOC returns a mmap-able dma-buf fd and stable paddr; a userspace test writes a pattern, flushes via SYS_CACHE_FLUSH, and a DMA engine (vpss offline copy in WS6) reads it back bit-exact for 10,000 iterations; no leak after 1,000 alloc/free cycles
+  -
+    id: WS3
+    name: VIP device tree, clocks, resets and pinmux policy
+    deliverable: sg2000-vip.dtsi + Duo S board additions: nodes for cvitek,base/sys/vi/vpss/cif/snsr (copied from sg200x_base.dtsi with clock ids renumbered to include/dt-bindings/clock/sophgo,cv1800.h, resets as raw 70-73 on the reset-simple controller, interrupts 24 'isp', 25 'sc', 28 'dwa' from sg200x_base_riscv.dtsi), reserved-memory CMA pools ('reusable' shared-dma-pool) sized from the SDK memmap; cif.c clock path switched to CCF only (remove CONFIG_COMMON_CLK_CVITEK ifdef and 38 raw 0x03002xxx pokes; clk_set_rate CLK_CAM0/1, clk_set_parent CLK_SRC_VIP_SYS_2); scaler.c 0x03002840 poke -> clk_prepare_enable(CLK_DISPPLL) (bit 1 semantics to be confirmed on bench); PINMUX_CONFIG sites #if 0 (TTL/BT) with MIPIRX pad bias expressed as a pinctrl state
+    depends_on:
+      - WS0
+    effort_engineer_weeks: 2-4
+    key_evidence: vendor-deps 'Clocks' (45 names, every one has a same-named mainline clock; ids differ e.g. DISP_VIP 105 vs 121) and clock table; vendor-deps 'Resets' (RST_CSIPHY0..APB = 70-73 absent from cv18xx-reset.h but reset-simple is index-based); cif-snsr vendor_kernel_only_deps CONFIG_COMMON_CLK_CVITEK (cif.c:1794, 38 ioremap(0x0 sites) and PINMUX (19 sites cif.c:1341-1491); vpss report 'raw ioremap 0x03002840 PLL_G2_SSC_SYN_CTRL' (scaler.c:3615-3623; mainline clk-cv1800.c:124-126 models bit 3 only); real DTS re-verified: sg200x_base.dtsi:668-681 (cif regs/resets/clocks), :696-700 (base), :702-715 (vi 11 clocks), :717-726 (vpss), sg200x_base_riscv.dtsi:312-314, 355-358, 361-364 (irqs); vendor-deps infra estimate clock/reset DT 2-4 + pinctrl 1-2 + VIP_SYS 1-2
+    risks:
+      - clk-cv1800 may not expose cam0pll power-down/rate control that cif's raw pokes performed (vendor-deps open_questions) -> sensor MCLK bring-up stall
+      - CLK_CSI0/1_RX_VIP gates requested by nobody in osdrv (cif-snsr open_questions) may need enabling
+      - Pure-MIPI operation without any fmux write is inferred, not verified
+    exit_criteria: dtbs_check-clean (vendor compatibles allowed as out-of-tree), all vi/vpss/cif clocks enable via clk_bulk and report expected rates in debugfs clk_summary; CLK_CAM0 produces 24/27/37.125 MHz measured on the MCLK pin; resets 70-73 assert/deassert without -EINVAL
+  -
+    id: WS4
+    name: cif + snsr_i2c lift-and-shift
+    deliverable: cvi_mipi_rx.ko and snsr_i2c.ko on 7.3 with ABI preserved: gpiod for snsr-reset (devm_gpiod_get_index_optional), devm_reset_control_get_optional_exclusive + IS_ERR fixes, void remove, i2c_idx -> adap->nr with DT aliases, I2C_M_WRSTOP -> I2C_M_STOP, pad_ctrl indexing quirk fixed to match the 5-entry DTS, VIP_SYS MAC dividers via base.ko
+    depends_on:
+      - WS2
+      - WS3
+    effort_engineer_weeks: 2-4
+    key_evidence: cif-snsr port_options A (2-4 wk) and api_breakages (of_gpio.h, devm_reset_control_get removed reset.h:100,617-620, i2c_idx vendor i2c.h:715, I2C_M_WRSTOP vs mainline i2c-designware-master.c:885-905 I2C_M_STOP splitting, pad_ctrl quirk cif.c:2842-2855 vs DTS 5 regs with 'pad_ctrl' 0x03001c30); cif is a pure bridge with no DMA (grep dma = 0 in reg_fields_csi_*.h) so it cannot be validated without vi
+    risks:
+      - I2C burst timing with I2C_M_STOP splitting differs from vendor use_interstop; exposure updates may miss the blanking window
+      - hs_settle/deskew heuristics (cif.c:532-581) untouched but depend on correct MAC clock ratio programming in VIP_SYS
+    exit_criteria: CVI_MIPI_SET_DEV_ATTR from the middleware brings the D-PHY lanes to HS (status via /proc/mipi-rx), CSI error counters stay zero over 10 minutes of streaming; snsr_i2c burst of 32 messages completes inside one vblank (measured duration logged by snsr_i2c_burst_fire)
+  -
+    id: WS5
+    name: vi/ISP lift-and-shift
+    deliverable: cv181x_vi.ko on 7.3 with ABI preserved: class_create, void remove, sched_set_fifo (prio semantics change documented), timer_setup/timer_delete_sync replacing legacy_timer_emu, compat_ptr_ioctl, streamline header removed, do_exit -> return; tuning nodes allocated with dma_alloc_coherent (or exported as dma-buf) and exposed through a VI mmap offset instead of virt_to_phys + /dev/mem (keeps VI_IOCTL_GET_TUN_ADDR ABI returning paddr; STRICT_DEVMEM decision recorded); bwladdr[] raw ioremaps moved to DT reg or syscon; CMDQ buffer via sys shim; VIP_SYS reset/divider via base.ko; MIPI single-sensor offline path only
+    depends_on:
+      - WS2
+      - WS3
+      - WS4
+    effort_engineer_weeks: 6-10
+    key_evidence: vi-isp port_options A (6-10 wk) and api_breakages (sched_setscheduler vi.c:4527, del_timer_sync/legacy_timer_emu vi.h:166-173 26 lines, compat_ptr_ioctl vi_core.c:38, tuning buffers virt_to_phys vi_tun_ip_ctrl.c:246-298 + kernel pointers copied to user vi.c:5627-5643, bwladdr ioremap vi.c:2790-2795); vi-isp key_findings: register layer vip/*_ip_ctrl.c 9k LOC with ~zero kernel API use, glue 11.8k LOC; all 3A in userspace so no algorithm work; vendor-deps CONFIG_SCHED_CVITEK RT boost for cvitask_isp_pre/pos disappears (kernel/sched/core.c:5499-5526)
+    risks:
+      - Middleware maps the tuning paddr via /dev/mem (unverified) -> if so, Stage 1 must run with STRICT_DEVMEM=n or patch libisp
+      - Loss of RT-priority boost may cause frame drops in the preraw/tuning kthread (vendor-deps open_questions)
+      - IRQ 'isp' coupling with fast_image (IRQ_NOAUTOEN) if any FreeRTOS firmware is present on the board
+    exit_criteria: Middleware sample (sample_vio or equivalent) streams 1080p30 YUV from the sensor through fe->be->DRAM->post with AE/AWB converging; ISP statistics buffers update every frame (POLLPRI events counted); no 'unknown symbol' or DMA errors in dmesg; frame-drop counter in /proc/cvitek/vi stays 0 over 10 minutes
+  -
+    id: WS6
+    name: vpss lift-and-shift (offline scaler) with display HAL dormant
+    deliverable: cv181x_vpss.ko on 7.3: PDE_DATA->pde_data, void remove, ION via sys shim (6 sites), strncpy 52 sites reviewed, raw 0x0A0C8070/0x08004544 pokes moved to base/syscon or dropped, tasklets kept; the display-HAL exports remain compiled (needed for Stage 0 vo/fb build) but unused; VI_VPSS online mode disabled by default
+    depends_on:
+      - WS2
+      - WS3
+    effort_engineer_weeks: 3-5
+    key_evidence: vpss report port_options A (3-6 wk incl. vo+fb) and api_breakages (PDE_DATA cvi_vip_vpss_proc.c:525, remove vpss_core.c:1788, ION 6 sites vpss.c:4994,5343, arch_sync_dma only in RGN_EX path scaler.c:5428 not built); key_findings 'vendor-kernel-only deps are few and localized ... heavy coupling is to base/sys (96 call sites)'; raw pokes scaler.c:4627-4639, 4643-4664
+    risks:
+      - IMG tasklet latency with mainline scheduling
+      - The 10 vpss DT clock names are optional in probe (NULL on failure) so a DT typo silently runs with gated clocks
+    exit_criteria: Offline MEM->MEM scaling of a 1080p frame to 720p and 480p via CVI_VPSS_SEND_FRAME/GET_CHN_FRAME is bit-exact against the vendor 5.10 baseline for the same input; v4l2-style stress of 10,000 jobs without hang
+  -
+    id: WS7
+    name: Camera integration, coherence validation and G1 gate
+    deliverable: End-to-end camera on 7.3 on Duo S with the vendor middleware: middleware allocator adapted (ION compat device or rebuilt libsys on /dev/dma_heap), cache-coherence checksum suite, performance comparison against the vendor 5.10 baseline, written G1 report
+    depends_on:
+      - WS4
+      - WS5
+      - WS6
+    effort_engineer_weeks: 2-4
+    key_evidence: sys-base risks (cache correctness, middleware mapping unverified); vendor-deps open_questions (latency impact of losing SCHED_CVITEK; DMA_BUF_IOCTL_SYNC vs phys-addr ioctls); ecosystem Q5: no mainline camera demo exists for Duo/Duo S, so this is first-of-its-kind validation
+    risks:
+      - Debugging coherence issues on a noncoherent SoC without a vendor-equivalent cache tracing tool can take weeks
+      - Closed-middleware crashes are opaque
+    exit_criteria: G1 criteria met (see checkpoints)
+  -
+    id: WS8
+    name: VIP_SYS and SC_TOP shared-register split (syscon/regmap) and IRQ sharing design
+    deliverable: Two syscon nodes with small providers: (1) 'vip-sys' at 0x0a0c8000 exposing regmap plus reset-simple-style controller over VIP_SYS_VIP_RESETS/RESETS1 bits (isp_top, img_*, sc_*, disp, bt, dsi_mac, csi_mac0-2, dsi_phy, csi_phy0, csi_be) and the CLK_CTRL0 DSI/BT divider bit; (2) 'sc-top' at 0x0a080000 size 0x1000 exposing CFG0/CFG1/AXI/INTR_MASK/INTR_STATUS/INTR_ENABLE/VO_MUX/BT/LVDS; base.ko's vip_sys_reg_read/write_mask/vip_toggle_reset re-implemented on the vip-sys regmap (11 + 7 external call sites unchanged in signature); vpss patched so sclr_top_set_cfg writes only sc_*_enable/sc_d_src fields with regmap_update_bits (disp_enable/disp_from_sc owned by DRM), sclr_intr_ctrl/clr/status mask out the disp_frame_start/disp_frame_end/i80 bits, the VO_CB_IRQ_HANDLER callback is removed, and the __sc_top_lock is replaced by the regmap lock; IRQ 'sc' requested IRQF_SHARED by both drivers, each clearing only its own bits and returning IRQ_NONE otherwise; fallback design documented (DRM owns IRQ and exports a notifier to vpss) if per-bit clear is not W1C on hardware
+    depends_on:
+      - WS6
+    effort_engineer_weeks: 2-4
+    key_evidence: vpss key_findings: SC_TOP couples display and scalers (scaler.c:708-745 CFG1 fields sc_d/v1-3_enable + disp_enable + disp_from_sc under raw spinlock, re-read lines 705-745), single INTR_MASK/STATUS 0x30/0x34 (scaler_reg.h:34-36 re-verified), scl_isr reads status, writes it back via sclr_intr_clr then forwards to VO (vpss_core.c:1332-1363 re-read; scaler.c:1413-1416 writes intr_mask.raw to INTR_STATUS, consistent with write-1-to-clear but not bench-verified: vpss open_questions); vpss already requests IRQF_SHARED (vpss_core.c:1664, 1752); vo's own request_irq is #if 0 (vo_core.c:211-220 re-read); sys-base: VIP_SYS reset bit map vip_common.h:26-61, 7 vip_toggle_reset + 11 vip_sys_reg_write_mask external sites; dsi_phy.c:255-259 CLK_CTRL0 bit4; SDK DTS maps vip_sys for both base (0x20) and vo (0xa0) (sg200x_base.dtsi:698, 742) confirming dual-owner history; mainline-infra 'VIP_SYS sub-controller is NOT modelled anywhere in mainline'
+    risks:
+      - INTR_STATUS may be read-clear or whole-register clear rather than per-bit W1C -> fallback to single owner + notifier (adds 1-2 wk)
+      - regmap_update_bits on CFG1 changes vendor behaviour of rewriting the whole register (qos_en 0xff, sc_debug_en) -> must preserve those fields
+      - Bindings for two new syscons add upstream review time if pursued
+    exit_criteria: Bench test: writing a single bit to INTR_STATUS clears only that bit (or fallback adopted); vpss offline scaling regression from WS6 still bit-exact with regmap-based SC_TOP; DRM vblank IRQs and SC frame-end IRQs both counted correctly under simultaneous load
+  -
+    id: WS9
+    name: Display register mapping and validation
+    deliverable: Cross-reference table: osdrv reg_disp.h/reg_vgop.h/scaler_reg.h/dsi_phy.c register writes vs SG2000 TRM VDP DISP (0x0A088000), OSD (0x0A088800), MIPI TX ctrl (0x0A08A000), PHY (0x0A0D1000) tables, and vs CV186x soph_drm sequencing (cvitek_disp.c/cvitek_dsi.c); list of undocumented bits (FIFO_THR 0x10201020, SHD bit9, 0x03002840 bit1, CLK_CTRL0 bit4, VBAT 0x03000220/0x03005144) with bench-test plan; DSI MAC capability check (burst-only vs non-burst)
+    depends_on:
+      - WS0
+    effort_engineer_weeks: 1-3
+    key_evidence: ecosystem Q3 'register-level similarity': 0 of 709 reg_disp.h defines overlap soph_drm names, each write must be re-validated (1-3 wk); ecosystem Q4 TRM video chapter line counts (DISP ~2300, OSD ~3100, MIPI TX ~600 table lines); vo-mipitx-fb open_questions (0x03002840, VBAT regs, CLK_CTRL0 bits, burst-only restriction vo_mipi_tx.c:95-108, smooth boot handoff vo.c:2381-2393)
+    risks:
+      - TRM v1.0 may omit bits the vendor driver relies on
+      - Bootloader (fsbl/u-boot) may pre-initialise DISP/DSI on some boards (ecosystem: scpcom panel init partly in bootloader)
+    exit_criteria: Every register write in the display HAL path is annotated documented/undocumented; undocumented list is <= 10 items each with a bench experiment
+  -
+    id: WS10
+    name: DRM/KMS 'ugly' first picture
+    deliverable: drivers/gpu/drm/sophgo/cv1800-drm: platform driver binding to a new 'disp' node (reg 0x0a088000 DISP+GOP, 0x0a08a000 DSI MAC, 0x0a0d1000 D-PHY; sc-top and vip-sys syscon phandles), one CRTC (DISP tgen, shadow/force-update latch, vblank from disp_frame_end), one primary plane (NV12/YUYV/RGB888/XRGB8888 subset), DSI encoder + mipi_dsi_host (attach rejects non-burst/command mode; transfer = sclr_dsi_dcs_write/read_buffer with SW ECC/CRC16), D-PHY programming via dsi_phy.c copied in-tree with its static base removed, clocks CLK_DISP_VIP/CLK_DSI_MAC_VIP/CLK_DSI_ESC/CLK_DISPPLL, drm_gem_dma + drm_fbdev_dma; panel via drm_of_find_panel_or_bridge (upstream panel driver, e.g. hx8394/ili9881c, or lontium-lt8912b); board DTS variant with MIPI_TX pads freed from sdhci1 or a LicheeRV Nano/Duo Module 01 DTS
+    depends_on:
+      - WS3
+      - WS8
+      - WS9
+    effort_engineer_weeks: 4-8
+    key_evidence: vo-mipitx-fb port_options D 'Hybrid bridge: thin DRM driver reusing scaler.c/dsi_phy.c verbatim' (4-8 wk to first picture) and mainline_framework_fit (CRTC = sclr_disp_set_timing 3179-3209 + DISP_CFG tgen bit 3043 + shadow 2249-2300/3031-3035; transfer = scaler.c:3877-4106 like sun6i_mipi_dsi.c:225,256; D-PHY dsi_phy.c:68-135,237-334,423-440); drm_gem_dma works on dma-noncoherent (drm_gem_dma_helper.c:149-155); mainline-infra: drm_fbdev_dma 323 L, 106 DSI panels, lt8912b 842 L; board constraint sg2000-milkv-duo-s.dts:114-133 (re-verified); SDK DTS vo/mipi_tx GPIOs porte 0/1/2 (sg200x_base.dtsi:685-687, 745-747) become panel reset-gpios/backlight
+    risks:
+      - D-PHY PLL constants and HS settle are reverse-engineered; wrong values fail silently (needs scope/analyser)
+      - Burst-only video mode restricts panel choice
+      - If the vendor U-Boot has already lit the panel, the driver must handle smooth handoff or do a full reset sequence
+    exit_criteria: G2: modetest renders a test pattern on a DSI panel or LT8912B HDMI sink at a fixed mode; /dev/fb0 console visible; vblank counter increments at the mode's refresh rate +/-1%; pixel clock measured within 2%
+  -
+    id: WS11
+    name: DRM clean-up toward upstream shape + GOP overlay planes + gamma
+    deliverable: D-PHY split into drivers/phy/sophgo/phy-cv1800-dphy.c (phy_configure with mipi_dphy opts), regmap/field helpers replacing the copied HAL globals (g_disp_cfg, static bases), atomic_check validation of alignment/window limits (64-byte stride, 16-byte GOP), 2-4 GOP overlay planes (ARGB8888/4444/1555; C8 palette optional) replacing VO RGN overlays, CRTC GAMMA_LUT (65 nodes), VBAT power-fail/shutdown DCS-off in panel/shutdown paths, YAML bindings for disp/dsi/dphy/sc-top/vip-sys; BT656/1120, LVDS, I80 explicitly excluded
+    depends_on:
+      - WS10
+    effort_engineer_weeks: 4-8 (brings the minimal driver to the 8-14 total; +3-6 for upstream review rounds, optional)
+    key_evidence: vo-mipitx-fb port_options A (8-14 wk minimal reviewed driver, +3-6 review) and B risks (GOP LUT not updatable while enabled cvifb.c:458-460; bw_fail vo.c:2306-2312; alignment vo_common.h:9-10); vpss report mainline_framework_fit (GOP 2 layers x 8 windows scaler.h:22-28); ecosystem Q3 BadgeOS wants exactly DISP+DSI host for LT8912B (downstream tester)
+    risks:
+      - 'Ugly' driver may never be cleaned if the project stops at first picture
+      - Upstream review calendar time (months) is outside engineer-week accounting
+    exit_criteria: kms_tests/igt basic plane and vblank tests pass; weston or kmscube runs on the panel; overlay plane shows an ARGB cursor over a video primary; driver has no fixed-address ioremap and no globals; dtbs_check clean for the new bindings
+  -
+    id: WS12
+    name: Coexistence validation and camera-to-display sample (G3)
+    deliverable: vpss (ported) + DRM loaded together; a sample app that captures via the middleware, exports VB blocks as dma-buf fds (SYS_ION_ALLOC already returns an fd) and page-flips them through DRM PRIME import (drm_gem_dma_prime_import_sg_table, contiguous only); regression suite running WS7 camera tests and WS11 display tests concurrently
+    depends_on:
+      - WS7
+      - WS11
+    effort_engineer_weeks: 1-3
+    key_evidence: sys.c:132-230 dma_buf_get path and SYS_ION_ALLOC returning fd (sys-base kernel_interface); vo-mipitx-fb userspace_contract 'frame handoff becomes dma-buf import (PRIME) + atomic page flips'; vpss key_findings shared SC_TOP/IRQ (the thing this gate proves)
+    risks:
+      - Format mismatch between VPSS output (vendor pixel formats, 64-byte alignment) and DRM fourccs
+      - IRQ sharing races only visible under load
+    exit_criteria: G3 criteria met (see checkpoints)
+  -
+    id: WS13
+    name: Stage 3a (optional): cif as V4L2 CSI-2 RX subdev + D-PHY RX phy driver
+    deliverable: drivers/media/platform/sophgo/cv1800-csi2rx.c (MAC0/MAC1 subdevs, fwnode endpoints data-lanes/lane-polarities, hs_settle from link-frequency) + phy-cv1800-csi-dphy (4L/2L instances), reusing cif_drv.c sequences; linear mode first, VC/DT HDR via streams later; snsr_i2c retired
+    depends_on:
+      - WS7
+      - WS8
+    effort_engineer_weeks: 4-8 (+1-3 HDR)
+    key_evidence: cif-snsr port_options B (4-8 wk + 1-3 HDR; +2-4 per missing sensor) and mainline_framework_fit (rkisp1-csi.c 518 L, cdns-csi2rx 1113 L, sun6i-mipi-csi2 771 L; lane remap select % 3 cif_drv.c:1282-1289 may exceed DT expressiveness); cif-snsr key_findings: CIF has no DMA so it is only testable with WS14
+    risks:
+      - Only useful with WS14; double work on clock/reset plumbing (cif-snsr option C risks)
+      - Common CVITEK sensors (gc2053/gc2083/gc4653, sc*, os04a10) have no mainline driver
+    exit_criteria: v4l2-compliance passes on the subdev; media graph sensor -> csi2rx -> (WS14 capture) streams RAW10 1080p30 with a mainline sensor driver (imx219/ov5647 class)
+  -
+    id: WS14
+    name: Stage 3b (optional): V4L2 wrapping of VI (capture nodes, stats META_CAPTURE, params META_OUTPUT with vendor structs)
+    deliverable: Out-of-tree V4L2 media-controller shell around the ported vi: per-channel /dev/videoN capture with vb2-dma-contig, stats node delivering cvi_isp_sts_mem, params node accepting cvi_vip_isp_{fe,be,post}_cfg nodes (vendor fourcc), sensors as subdevs with exposure/gain controls; vendor ioctl path kept in parallel during transition
+    depends_on:
+      - WS13
+    effort_engineer_weeks: 10-16
+    key_evidence: vi-isp port_options C (A + 10-16 wk) and mainline_framework_fit (stats memblocks -> META_CAPTURE, double-buffered tuning nodes -> rkisp1-style ext params; post node 47,424 B/node, be 16,632 B, fe 104 B; v4l2-isp.h generic framing exists per mainline-infra 'ISP reference drivers'); vi-isp risks 'two owners of ISP state during transition'
+    risks:
+      - Vendor structs in a META format are not upstreamable; stays out-of-tree
+      - Tuning timing moves from the SCHED_FIFO kthread to vb2 queue semantics -> regressions
+    exit_criteria: libcamera 'simple' pipeline or a raw V4L2 app captures processed YUV with params/stats round-trip at 30 fps; vendor ioctl path still passes WS7 tests
+  -
+    id: WS15
+    name: Stage 3c (optional): libcamera pipeline handler + IPA for the CVITEK ISP
+    deliverable: libcamera pipeline handler for cv1800 media graph, IPA module either wrapping the vendor 3A libraries (if licence/ABI permit) or re-implementing AE/AWB/AF with vendor tuning files converted
+    depends_on:
+      - WS14
+    effort_engineer_weeks: 15-30 (ecosystem: 20-40 if 3A re-implemented)
+    key_evidence: ecosystem Q3 libcamera: no Sophgo pipeline handler (pipeline list at HEAD c0049ea); vi-isp option B: 15-30 wk libcamera/IPA/3A; ISP registers exist only in GPL osdrv headers (28,319 lines; ecosystem Q4) -> no clean-room; vendor 3A closed (sophpi 'isp' projects)
+    risks:
+      - Image quality parity with vendor tuning unlikely without the closed algorithms
+      - Licensing of wrapping closed 3A inside an IPA module (escalate to Legal)
+    exit_criteria: libcamera cam/qcam renders a converged, white-balanced 1080p30 stream; IQ comparison vs vendor stack documented
+phases_and_milestones:
+  -
+    milestone: M0 - Baseline ready (end of prerequisites)
+    contents: WS0: osdrv rebased to sg200x-dev, Armbian 7.3 kernel with ERRATA_THEAD/CMA/DMABUF_HEAPS/MEDIA/DRM booting on Duo S, SDK DTS imported, middleware availability and licence status known, vendor 5.10 regression baseline captured (camera sample, frame checksums, fps)
+    cumulative_effort_weeks: 1-2
+    demo: Boot log on 7.3 showing T-Head CMO ops and /dev/dma_heap/<name>; vendor 5.10 image streaming the reference sensor with recorded checksums
+  -
+    milestone: M1 / G0 - Stage 0 compile-only measurement
+    contents: WS1: 9 display+camera modules build and link against 7.3 (-Werror off, ION stubbed, compat header); breakage report vs Phase-1 inventory; decision whether Stage 1 estimates hold
+    cumulative_effort_weeks: 3-6
+    demo: make output with 9 .ko files; modpost unknown-symbol list limited to the stub set; spreadsheet of warnings and raw-register/ION/pinmux sites per module
+  -
+    milestone: M2 - Foundation alive on 7.3
+    contents: WS2 + WS3: sys/base load with CMA-backed VB pools and dma-buf fds; /dev/ion compat; cache ioctls on dma_sync_single_*; VIP DT nodes probe; clocks/resets verified on the bench
+    cumulative_effort_weeks: 8-15
+    demo: Userspace test allocates a VB pool, mmaps a block through the dma-buf fd, flushes, and a DMA copy returns bit-exact data; clk_summary shows VIP clocks at expected rates; MCLK measured
+  -
+    milestone: M3 / G1 - Camera streaming on 7.3 with vendor middleware
+    contents: WS4 + WS5 + WS6 + WS7: cif, snsr_i2c, vi, vpss ported; sensor streaming with 3A; offline VPSS scaling; coherence and performance validated against the 5.10 baseline
+    cumulative_effort_weeks: 19-35
+    demo: sample_vio-class app streams 1080p30 for 10 minutes, dumps frames bit-exact vs baseline on a static scene, VPSS 720p/480p outputs correct; dmesg clean
+  -
+    milestone: M4 / G2 - Display first picture (can run in parallel with M3 from M2 onward with a second engineer)
+    contents: WS8 (syscon/IRQ split) + WS9 (register validation) + WS10 (ugly DRM): DSI panel or LT8912B HDMI lit by the DRM driver, fbdev console via drm_fbdev_dma
+    cumulative_effort_weeks: 26-50 (M3 + 7-15)
+    demo: modetest pattern and Linux console on the panel/HDMI; vblank counter at refresh rate; INTR_STATUS per-bit clear bench result recorded
+  -
+    milestone: M5 / G3 - Coexistence and clean DRM
+    contents: WS11 + WS12: PHY driver split, regmap cleanup, overlay planes, gamma, bindings; camera + display running together; PRIME sample app
+    cumulative_effort_weeks: 31-59
+    demo: Camera preview on the panel via dma-buf PRIME at >=25 fps while VPSS scales a second output, 10-minute soak with IRQ/frame counters matching; igt basic tests pass
+  -
+    milestone: M6 (optional) - Stage 3 V4L2/libcamera camera
+    contents: WS13 + WS14 + WS15 (+2-4 wk per missing sensor driver)
+    cumulative_effort_weeks: 60-113 (M5 + 29-54, plus sensors)
+    demo: libcamera cam streams processed video from a mainline sensor driver through csi2rx -> VI with params/stats; IQ comparison report
+critical_path: WS0 -> WS1 (G0) -> WS2 (ION/CMA shim + cache ops + /dev/ion compat; the single largest design item and the first place runtime risk appears) -> WS3 (DT/clocks/resets, needed by every runtime module) -> WS5 (vi lift, 6-10 wk, the largest module) -> WS7 (middleware bring-up and coherence validation, G1). WS4 (cif) and WS6 (vpss) hang off WS2/WS3 and are shorter than vi, so they are not on the critical path. Display (WS9 -> WS8 -> WS10 -> WS11) can start as soon as WS3 exists and only joins the critical path at WS12 (G3), because WS8 needs the ported vpss from WS6 to test the SC_TOP/IRQ split. With one engineer everything is serial (31-59 eng-weeks); with two engineers (camera, display) calendar time approaches the camera chain alone (19-35 eng-weeks to G1) plus the WS12 merge, but hardware debugging on one board set is a shared bottleneck.
+total_effort_engineer_weeks: Stage 0 (WS0+WS1): 3-6. Stage 1 (WS2-WS7): 16-29 incremental (cumulative to G1: 19-35). Stage 2 (WS8-WS12): 12-24 (cumulative to G3: 31-59). Stage 3 optional (WS13-WS15): 29-54 plus 2-4 per missing sensor driver (cumulative with Stage 3: 60-113). Upstream review rounds for the DRM driver, PHY driver and the two syscon bindings: +3-6 optional, calendar-bound. Note: the ecosystem report's 10-18 wk for a mechanical port of 7 modules assumes no hardware validation; this plan's Stage 1 includes bench validation and the /dev/ion compat path, hence the higher range.
+team_and_assumptions:
+  - Team: 1 kernel engineer experienced with DMA-API/dma-buf and misc-driver porting (camera chain), 1 kernel engineer experienced with DRM atomic/DSI/PHY (display); optionally the same person serially. Part-time hardware support (scope/logic analyser for D-PHY, MCLK measurement).
+  - Hardware: Milk-V Duo S (SG2000) for camera (CSI connector); for display either a Duo S DTS variant that re-muxes PIN_MIPI_TX* away from sdhci1 (losing SDIO WiFi; sg2000-milkv-duo-s.dts:114-133), or a LicheeRV Nano (SG2002, mainline DTS since 6.13) with a DSI panel, or Duo Module 01 EVB with LT8912B (BadgeOS). At least one DSI panel with an existing upstream panel driver or an LT8912B/LT9611 DSI->HDMI bridge.
+  - Sensor: one MIPI sensor supported by the vendor middleware (GC2083/GC2053 class used by Milk-V); Stage 3 additionally needs a sensor with a mainline driver (imx219/ov5647/imx290 class).
+  - Vendor middleware (cvi_mpi: libsys/libvb/libvi/libisp/libsns/libvpss) is available as binaries at minimum and licensed for internal use; if sources are available the /dev/ion compat device can be skipped (saves 0.5-1 wk) by rebuilding libsys on /dev/dma_heap. ISP tuning files for the chosen sensor are available.
+  - Kernel base: Armbian sophgo-sg200x 7.3 patch set (thermal, remoteproc, PWM, efuse nvmem, TPU, 128 MiB CMA) as integration target; ERRATA_THEAD enabled; CONFIG_STRICT_DEVMEM may be disabled during Stage 1 if the middleware maps tuning buffers via /dev/mem (unverified).
+  - Phase-1 line numbers refer to the 2024-07-31 snapshot; after rebase to sg200x-dev some sites move (re-inventory ~0.5 wk included in WS0/WS1).
+  - Effort is engineer-weeks of focused work, not calendar; upstream review latency, procurement and vendor support are excluded. Ranges reflect uncertainty, not padding; the high end assumes the W1C fallback, /dev/mem rework and one major coherence bug hunt.
+  - Legal: out-of-tree GPL-2.0 modules derived from GPL osdrv are licence-compatible; redistribution of the closed middleware and ISP tuning files, and any wrapping of closed 3A in Stage 3, require Legal review (not costed).
+prerequisites_before_starting:
+  - Rebase /home/user/sg2000_osdrv (snapshot 2024-07-31) to sophgo/osdrv sg200x-dev HEAD 1b3a4964 (weekly releases through 2026-08-24, incl. 'VO related fixes'); re-run the Phase-1 greps to refresh line numbers
+  - Obtain the SDK DTS - already available locally: /tmp/claude-0/-home-user/be69dd8d-dbf3-58dc-9770-31db5f4edebc/scratchpad/ext/sophgo-sg200x-debian/configs/common/dts/sg200x/sg200x_base.dtsi (cif :668-681, mipi_tx :683-690, sys :692-694, base :696-700, vi :702-715, vpss :717-735, vo :740-749, fb :764-768) and sg200x_riscv/sg200x_base_riscv.dtsi (irq 24 'isp' :312-314, 25 'sc' :355-358, 28 'dwa' :361-364), plus duos/memmap.py (ION_SIZE 74 MiB) and configs/duos/dts/cv181x_milkv_duos_sd.dts
+  - Kernel config: CONFIG_ERRATA_THEAD=y (hence ERRATA_THEAD_CMO), CONFIG_CMA/DMA_CMA, CONFIG_DMABUF_HEAPS(_CMA), CONFIG_MEDIA_SUPPORT/VIDEO_DEV, CONFIG_DRM + DRM_MIPI_DSI + panel/bridge drivers (hx8394/ili9881c/lt8912b), decision on CONFIG_STRICT_DEVMEM for Stage 1; start from Armbian linux-sophgo-sg200x-riscv64-edge.config which already sets ERRATA_THEAD (:44), CMA (:101, :2332) and DMABUF_HEAPS_CMA (:1642-1644)
+  - riscv64 cross toolchain matching the kernel (GCC 13+/clang) and a configured 7.3 build tree (KERNEL_DIR/CVIARCH=CV181X inputs for the osdrv Makefile)
+  - Boards, sensor, panel/bridge and measurement equipment procured (see assumptions); confirm which board carries free DSI pads
+  - Confirm middleware availability and how it maps VB pools and tuning buffers (dma-buf fd vs /dev/mem) - decides WS2's /dev/ion compat scope and the STRICT_DEVMEM setting (sys-base and vi-isp open_questions)
+  - Manual lore.kernel.org/sophgo, dri-devel and linux-media search for any in-flight CV18xx CSI/ISP/DRM series (network-blocked here; ecosystem Q2 conclusion is 'likely', not verified)
+  - Download the SG2000 TRM PDF (sophgo-doc release sg2000-trm-v1.0) for the DISP/OSD/MIPI TX/MIPI RX/VI register tables used by WS9
+  - Legal check (Dentsply Sirona Legal/Compliance): GPL-derivative status of ISP/VPSS register headers, middleware/firmware redistribution, and any plan to wrap closed 3A
+go_no_go_checkpoints:
+  - G0 (after Stage 0, cumulative 3-6 wk): GO if all 9 modules build/link with -Werror off, modpost unknown symbols are limited to the planned stub set, and the measured breakage is within +/-20% of the api-delta inventory (rows 1-44). NO-GO/replan if a structural ABI problem appears (e.g. packed ioctl structs with pointers under CONFIG_COMPAT, or a middleware dependency on vendor kernel behaviour that cannot be reproduced) or if unknown breakage exceeds 2x the inventory.
+  - G0.5 (after WS2, cumulative 8-15 wk): GO if SYS_ION_ALLOC/VB pools work on CMA with dma-buf fds, the DMA round-trip test is bit-exact over 10,000 iterations, and the middleware's allocator path (via /dev/ion compat or rebuilt libsys) is confirmed to work. NO-GO if the middleware requires /dev/mem access to kernel RAM that cannot be re-plumbed, or if the fd/VB_BLK semantics cannot be reproduced without middleware source.
+  - G1 (camera, cumulative 19-35 wk): GO if the vendor sample streams 1080p at >=30 fps for 10 minutes with 3A converging, frame checksums on a static scene are stable (no cache corruption), VPSS offline outputs are bit-exact vs the 5.10 baseline, and dmesg has no DMA/IRQ errors. NO-GO if coherence corruption persists after 2 weeks of focused debugging or sustained fps is <80% of the 5.10 baseline with no identified cause.
+  - G2 (display first picture, 4-8 wk into Stage 2): GO if modetest shows a correct pattern on the DSI panel/HDMI bridge, /dev/fb0 console works, vblank rate is within 1% of the mode and pixel clock within 2%. Also record the INTR_STATUS per-bit clear bench result; if not W1C, adopt the single-owner+notifier fallback (+1-2 wk) before proceeding. NO-GO if no HS link is achieved after 4 weeks of D-PHY work (suggests undocumented PLL/VIP_SYS dependencies beyond the HAL).
+  - G3 (coexistence, cumulative 31-59 wk): GO if camera streaming and display scanout run together for 10 minutes with matching IRQ/frame counters, no SC_TOP CFG1 clobber (read-back checks), camera preview via PRIME at >=25 fps, igt basic plane/vblank tests pass, and the DRM driver has no fixed-address ioremaps. This is the point where the engineering lead has a defensible 'display and camera are feasible on 7.x' answer with running code.
+  - G4 (Stage 3 funding decision): proceed only if a product requirement for libcamera/V4L2 exists, Legal clears wrapping or re-implementing 3A, and a sensor with a mainline driver is acceptable; otherwise stop at G3 and treat the camera as 'vendor stack on modern kernel' with recurring maintenance (see outlook).
+top_risks_ranked:
+  -
+    risk: Closed CVITEK middleware binary assumptions: direct /dev/ion ION_IOC_ALLOC + CVITEK PHY_RANGE ioctls for the ISP pool, probable /dev/mem mapping of kernel-kzalloc'd tuning buffers, VB_BLK handles that are raw kernel pointers, process-bound ION fd lifecycle (vi-isp vendor_kernel_only_deps; sys-base key_findings; vi.c:5636; vendor ion.c:530,986-990)
+    likelihood: high (the direct /dev/ion use is verified; /dev/mem use is unverified but implied by the paddr-only ABI)
+    impact: high - camera unusable on 7.x without a compat layer; could invalidate Stage 1
+    mitigation: Resolve at G0.5: implement the /dev/ion compat miscdevice over the CMA pool; keep SYS_ION_ALLOC/VB ABI exactly; run Stage 1 with STRICT_DEVMEM=n if needed and move tuning nodes to a VI mmap offset later; secure middleware sources early to drop the compat device; follow Armbian TPU patch 0064 (vendor-uAPI-compatible dma-buf path proven)
+  -
+    risk: Cache coherence on dma-noncoherent C906: vendor 'invalidate' = clean+invalidate in for_device, mainline cleans in for_device and invalidates in for_cpu; ERRATA_THEAD not enabled by default; userspace drives cache ops by physical address (sys-base api_breakages; sys.c:376-415; dma-noncoherent.c:56-113)
+    likelihood: medium-high
+    impact: high - silent frame/stat corruption that is slow to diagnose
+    mitigation: Enable ERRATA_THEAD (Armbian config already does); map SYS_CACHE_INVLD to dma_sync_single_for_cpu(FROM_DEVICE) and SYS_CACHE_FLUSH to for_device(TO_DEVICE); checksum-based soak tests at G0.5 and G1; identity paddr==dma_addr assumption documented (no IOMMU)
+  -
+    risk: Display register semantics known only from vendor code: D-PHY PLL constants (dsi_phy.c:237-334), 0x03002840 bit 1, VIP_CLK_CTRL0 bit 4, FIFO_THR/SHD bits, VBAT registers, burst-only DSI MAC, possible bootloader pre-init (vo-mipitx-fb open_questions; vpss open_questions)
+    likelihood: medium
+    impact: medium-high - first picture slips from 4-8 to 8-12 wk
+    mitigation: WS9 TRM cross-reference before coding; reuse dsi_phy.c/scaler.c verbatim first to separate register-sequence bugs from DRM plumbing; scope/analyser on D-PHY; express DISPPLL via CCF and bench-verify bit 1
+  -
+    risk: SC_TOP/IRQ sharing between forward-ported vpss and the DRM driver: INTR_STATUS per-bit W1C inferred from code (scaler.c:1413-1416, vpss_core.c:1334-1355) but not bench-verified; CFG1 whole-register rewrite semantics (qos_en 0xff) must be preserved
+    likelihood: medium
+    impact: medium - lost vblanks or scaler frame-end events; fallback adds 1-2 wk and a non-upstream notifier
+    mitigation: Bench test at G2; syscon regmap_update_bits with explicit field masks; fallback design (DRM owns IRQ, exports notifier to vpss) documented in WS8; keep VPSS online-disp path disabled
+  -
+    risk: Board/pad availability for DSI: Duo S MIPI_TX pads are used by sdhci1 (sg2000-milkv-duo-s.dts:114-133)
+    likelihood: high (verified)
+    impact: medium - needs a second board type or a DTS variant that drops SDIO WiFi
+    mitigation: Procure LicheeRV Nano or Duo Module 01 + LT8912B; or create a Duo S 'display' DTS variant; decide at WS0
+  -
+    risk: Underestimating Stage 1: vi is 24k LOC with 1,496 ISP_WR/RD macro uses and 4 SCHED_FIFO kthreads; loss of CONFIG_SCHED_CVITEK RT boost and sched_set_fifo prio 50 vs 90 may change frame timing (vendor-deps 'Vendor patches'; vi-isp key_findings)
+    likelihood: medium
+    impact: medium - frame drops or exposure updates missing vblank
+    mitigation: Measure at G1 against the 5.10 baseline; raise priorities via sched_set_fifo and userspace chrt; keep the ranges' high end
+  -
+    risk: Perpetual API churn for the out-of-tree camera modules (44 inventory rows between 5.10 and 7.3; vermagic enforced on mainline)
+    likelihood: high
+    impact: medium - recurring cost each kernel bump
+    mitigation: Pin to Armbian sophgo-sg200x branches; CI compile against linux-next weekly; keep fixes minimal and isolated in compat headers; plan Stage 3 only if long-term ownership is intended
+  -
+    risk: No open 3A/tuning for the ISP; ISP/VPSS registers exist only in GPL osdrv headers (no TRM coverage) so Stage 3 is a GPL-derivative, not clean-room, and image quality parity is unlikely (ecosystem Q4; vi-isp option B)
+    likelihood: high (for Stage 3 only)
+    impact: high for Stage 3; none for Stages 0-2
+    mitigation: Do not fund Stage 3 to answer feasibility; gate at G4 with Legal and product input
+  -
+    risk: Phase-1 evidence is from a 2-year-stale osdrv snapshot; the 'no upstream series' conclusion is search-snippet based (lore blocked)
+    likelihood: medium
+    impact: low-medium - re-inventory or unexpected collaboration/collision
+    mitigation: Rebase and re-grep in WS0; manual lore search before WS10
+userspace_impact: Stage 1 (camera): the CVITEK MPI middleware (libsys/libvb/libvi/libisp/libsns/libvpss, closed, not in the repos) is retained and must keep working against the unchanged /dev/cvi-sys, /dev/cvi-base, /dev/cvi-mipi-rx, /dev/cvi-vi, /dev/cvi-vpss ioctl ABIs (sys-base kernel_interface; vi-isp kernel_interface 53+38 sub-ids; cif-snsr 17 ioctls; vpss 49 ioctls). Three userspace-visible changes are unavoidable: (1) memory comes from a CMA reserved-memory pool instead of the ION carveout - SYS_ION_ALLOC keeps returning paddr + dma-buf fd, but the middleware's direct /dev/ion use for the ISP working pool (ION_IOC_ALLOC + CVITEK flush/invalidate-by-paddr) needs either the /dev/ion compat device in WS2 or a rebuilt libsys on /dev/dma_heap; (2) SYS_CACHE_INVLD semantics change from clean+invalidate to invalidate (must be validated); (3) if the middleware maps tuning buffers via /dev/mem (unverified), Stage 1 needs STRICT_DEVMEM=n or the WS5 mmap-offset rework. ISP tuning files, sensor libraries and 3A are unchanged; vendor RT-thread auto-boost disappears (SCHED_CVITEK) so latency must be re-measured. Panel init: moves from userspace /dev/cvi-mipi-tx ioctls (lane map, timing, DCS packets; vo_mipi_tx.c:163-273) into DRM panel drivers selected by DT - libvo, mipi_tx samples and VO_SDK_* ioctls stop working entirely (vo-mipitx-fb userspace_contract: 'a DRM port breaks all of this'); a compat shim is explicitly not recommended. /dev/fb0 users keep working through drm_fbdev_dma but with XRGB8888 instead of the vendor default ARGB4444 and without the 8-bit LUT mode. VO RGN overlays and cvifb's GOP window become DRM overlay planes (WS11). VPSS->VO kernel-internal binding (SYS_SET_BINDCFG to VO) is replaced by a userspace loop that exports VB blocks as dma-buf fds and page-flips via DRM PRIME (WS12 sample). Stage 3 (optional): camera userspace moves to libcamera (new pipeline handler + IPA); the vendor 3A is either wrapped (licence permitting) or re-implemented; vendor sensor libraries are replaced by drivers/media/i2c subdevs (gc2053/gc2083/gc4653/sc*/os04a10 need new drivers).
+maintenance_outlook: Camera chain (Stage 1) stays out-of-tree with the vendor ABI indefinitely: between 5.10 and 7.3 (about 30 releases) the inventory counted 44 breakage classes incl. 3 hard ones (ION, arch_sync_dma export, strncpy removal), so expect 0.5-2 engineer-weeks per major kernel release to re-fix API churn for sys/base/cif/snsr_i2c/vi/vpss (estimate, assumes compat headers isolate most churn and the Armbian branch is tracked rather than every rc). The Sophgo osdrv bm1688 branch shows the vendor fixing the same class of 6.x breakages, which can be mined each cycle (ecosystem Q3). Vendor fixes on sg200x-dev (weekly releases) must be merged manually and re-ported - the local snapshot already lags two years. Display (Stage 2): once the DRM driver, PHY driver and the vip-sys/sc-top syscon bindings are upstreamed (+3-6 wk, calendar months), maintenance falls to normal in-tree churn handled by subsystem-wide refactors; until then it is also out-of-tree but tracks the comparatively stable DRM atomic API. The hybrid split itself carries a maintenance smell: the SC_TOP regmap and IRQF_SHARED patch inside the ported vpss are throwaway if Stage 3 ever replaces vpss with a V4L2 driver. Ecosystem position: no upstream effort exists (wiki 2026-09-02: DRM/Media 'Not Started'); Armbian 7.2/7.3 is the natural home for the patch set and BadgeOS a downstream consumer for the DRM driver, so community maintenance help is plausible for display, unlikely for the vendor-ABI camera modules.
+where_this_strategy_is_weak: Versus pure A (lift-and-shift everything including vo/mipi_tx/fb): A reaches a vendor-compatible display in 3-6 (vpss agent) to 6-12 (vo agent) eng-weeks once base/sys/vpss are ported, keeps libvo and the mipi_tx panel-init flow working, and avoids the SC_TOP/IRQ split entirely; C spends 12-24 eng-weeks on display, breaks the vendor VO userspace, and introduces two owners of SC_TOP/IRQ. If the only goal is 'run the vendor SDK on a modern kernel', A is cheaper by roughly 8-15 eng-weeks and lower risk. Versus pure B (native V4L2 + DRM everywhere): C's camera remains a vendor-ABI, closed-3A, physical-address stack that is never upstreamable and must be re-fixed every release; B produces an upstreamable, libcamera-based platform - but at 50-90+ eng-weeks with low confidence on image quality and no TRM coverage for the ISP, so B cannot give a cheap answer. C-specific weaknesses: (1) Stage 0's compile-only gate measures the cheapest kind of breakage (API churn, bounded and mechanical) while the real risk (ION/middleware/cache semantics) only surfaces at G0.5/G1, so G0 is a weaker gate than it looks; (2) the 'ugly-then-clean' DRM path risks stalling at ugly; (3) the hybrid split forces non-upstreamable patches into vpss (regmap SC_TOP, masked IRQ) that are discarded if Stage 3 happens, and Stage 3 itself repeats cif/vpss plumbing (cif-snsr option C: 'double work'); (4) total cost to a defensible answer is 25-43 eng-weeks (G1 + G2), not a few weeks, and to a maintainable result 31-59 - the 'cheapest path' claim holds relative to B, not in absolute terms; (5) several load-bearing facts remain unverified (middleware /dev/mem use, W1C status of INTR_STATUS, 0x03002840 bit 1, pure-MIPI needing no fmux writes, no in-flight upstream series) and the plan's gates are where they get resolved, not before.
